@@ -1,4 +1,4 @@
-package storage
+package db
 
 import (
 	"database/sql"
@@ -13,11 +13,10 @@ func NewDataBase(connString string) (*sql.DB, error){
 		return nil, err
 	}
 
-	is_connected := db.Ping()
-
-	if is_connected != nil {
-		return nil, is_connected
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
 	}
 
-
+	return db, nil
 }
