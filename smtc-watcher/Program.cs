@@ -1,4 +1,5 @@
 ﻿using System.Text.Json; 
+using System.IO;
 using Windows.Media.Control;
 using System;
 using System.Threading;
@@ -9,24 +10,36 @@ class Program {
     private const string TargetAppId = "Spotify";
     private static GlobalSystemMediaTransportControlsSession? _currentSession;
     private static GlobalSystemMediaTransportControlsSessionManager _sessionManager;
-    private static int _counter = 0;
-    private static string? _lastSong;
+    private static string? _lastTitle;
+    private static string? _lastArtist;
+    private static string? _lastAlbumTitle;
+    private static string filePath = "data.txt";
 
     static async Task Main(){
-        Console.WriteLine("Initializing Windows Media Session Manager...");
-        _sessionManager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-        Console.WriteLine("Session Manager Found!");
+        try {
+            
+            Console.WriteLine("Initializing Windows Media Session Manager...");
+            _sessionManager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+            Console.WriteLine("Session Manager Found!");
 
-        /* 
-        event += event handler
-        when currentsessionchanged runs (when the session changes), 
-        run the function oncurrentsessionchanged as well (the logic when the session changes)
-        */
-        _sessionManager.CurrentSessionChanged += OnCurrentSessionChanged;
+            /* 
+            event += event handler
+            when currentsessionchanged runs (when the session changes), 
+            run the function oncurrentsessionchanged as well (the logic when the session changes)
+            */
+            _sessionManager.CurrentSessionChanged += OnCurrentSessionChanged;
         
-        SyncActiveSession(_sessionManager.GetCurrentSession());
+            SyncActiveSession(_sessionManager.GetCurrentSession());
 
-        Console.ReadLine();
+            Console.ReadLine();
+        } catch (Exception ex){
+            Console.WriteLine($"Error receiving session manager: {ex.Message}");
+        }
+        
+
+       
+
+        
 
         
         
@@ -76,16 +89,20 @@ class Program {
         try {
             var props = await session.TryGetMediaPropertiesAsync();
 
-            var song = $"{props.Title} by {props.Artist} from {props.AlbumTitle}";
-
-            if (song == _lastSong){
+            if (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle){
                 return;
             }
+        
 
-            _lastSong = song;
-            _counter+=1;
+            _lastTitle = props.Title;
+            _lastAlbumTitle = props.AlbumTitle;
+            _lastArtist = props.Artist;
+
+            
             if (props != null){
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] " + $"Counter: {_counter} => {song}");
+                string data = $"{DateTime.Now:HH:mm:ss.fff}, {props.Title}, {props.Artist}, {props.AlbumTitle}\n";
+                Console.WriteLine(data);
+                await File.AppendAllTextAsync(filePath, data);
             }
         } catch (Exception ex){
             Console.WriteLine($"Error receiving properties: {ex.Message}");
