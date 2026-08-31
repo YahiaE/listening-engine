@@ -11,15 +11,17 @@ import (
 var databasePool *sql.DB
 
 func handler(w http.ResponseWriter, r *http.Request){
-	bodyBytes, err := io.ReadAll(r.Body)
+    bodyBytes, err := io.ReadAll(r.Body)
 
-	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
+    if err != nil {
+        http.Error(w, "Failed to read request body", http.StatusBadRequest)
+        return
+    }
 
-	bodyString := string(bodyBytes)
-	log.Println("Received body: ", bodyString)
+    log.Println("Received:", string(bodyBytes))
+
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("received"))
 }
 
 func Start(port string, db *sql.DB){
@@ -31,5 +33,5 @@ func Start(port string, db *sql.DB){
 	fmt.Printf("Server is running on port %v", port)
 
 
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
 }
