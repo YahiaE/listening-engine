@@ -4,16 +4,34 @@ using Windows.Media.Control;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Net.Http;
+using System.Net.Http.Json;
+
+public class Event {
+    public string song {get; set;}
+    public string artist {get; set;}
+    public string album {get; set;}
+    public DateTime played_at {get; set;}
+
+    public Event(string s, string at, string am, DateTime pa){
+        song = s;
+        artist = at;
+        album = am;
+        played_at = pa;
+    }
+}
 
 class Program {
 
     private const string TargetAppId = "Spotify";
     private static GlobalSystemMediaTransportControlsSession? _currentSession;
-    private static GlobalSystemMediaTransportControlsSessionManager _sessionManager;
+    private static GlobalSystemMediaTransportControlsSessionManager? _sessionManager;
+   
     private static string? _lastTitle;
     private static string? _lastArtist;
     private static string? _lastAlbumTitle;
-    private static string filePath = "data.txt";
+
+    private static readonly HttpClient client = new HttpClient();
 
     static async Task Main(){
         try {
@@ -89,7 +107,7 @@ class Program {
         try {
             var props = await session.TryGetMediaPropertiesAsync();
 
-            if (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle){
+            if (props == null || (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)){
                 return;
             }
         
@@ -97,15 +115,24 @@ class Program {
             _lastTitle = props.Title;
             _lastAlbumTitle = props.AlbumTitle;
             _lastArtist = props.Artist;
-
             
-            if (props != null){
-                string data = $"{DateTime.Now:HH:mm:ss.fff}, {props.Title}, {props.Artist}, {props.AlbumTitle}\n";
-                Console.WriteLine(data);
-                await File.AppendAllTextAsync(filePath, data);
+            
+            if (props.Title != "") {
+                Console.WriteLine(props.Title + " seen");
+                var newEvent = new Event(props.Title, props.AlbumTitle, props.Artist, DateTime.UtcNow);
+                HttpResponseMessage response = await client.PostAsJsonAsync("http://172.19.164.243:5000", newEvent);
+                response.EnsureSuccessStatusCode();
+
+                string responseBody = await response.Content.ReadAsStringAsync();
+                Console.WriteLine("Response received:");
+                Console.WriteLine(responseBody);
             }
+            
+
+           
+            
         } catch (Exception ex){
-            Console.WriteLine($"Error receiving properties: {ex.Message}");
+            Console.WriteLine($"Error: {ex.Message}");
         }
     }
 }
