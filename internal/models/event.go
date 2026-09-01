@@ -7,8 +7,9 @@ import (
 
 // attributes are capitalized for store package and other packages to access
 type ListeningEvent struct {
-	ID uuid.UUID `json:"id"`
-	UserID string `json:"user_id"`
-	SongID string `json:"song_id"`
+	UserID uuid.UUID `json:"user_id"`
+	Song string `json:"song"`
+	Artist string `json: "artist`
+	Album string `json: "album`
 	PlayedAt time.Time `json:"played_at"`
 }
