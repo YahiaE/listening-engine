@@ -2,27 +2,37 @@ package server
 
 import (
 	"fmt"
-	"io"
+	"encoding/json"
 	"net/http"
 	"log"
 	"database/sql"
+	"github.com/YahiaE/listening-engine/internal/models"
+	"github.com/google/uuid"
 )
 
 var databasePool *sql.DB
 
 func handler(w http.ResponseWriter, r *http.Request){
-	bodyBytes, err := io.ReadAll(r.Body)
+	var event models.ListeningEvent
+
+	err := json.NewDecoder(r.Body).Decode(&event)
 
 	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	
-	bodyString := string(bodyBytes)
-	log.Println("Received body: ", bodyString)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("received"))
+	if event.UserID == uuid.Nil {
+		event.UserID = uuid.New()
+		byteSlice := event.UserID[:]
+		log.Println(len(byteSlice))
+		w.Write(byteSlice)
+	}
+
+	log.Println("Received body: ", event)
+
+	
 }
 
 func Start(port string, db *sql.DB){
