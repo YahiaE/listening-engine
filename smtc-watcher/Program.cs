@@ -6,12 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Net.Http;
 using System.Net.Http.Json;
-<<<<<<< HEAD
-=======
 using System.Text;
 using Meziantou.Framework.Win32;
-using System.Security.Cryptography;
->>>>>>> 85993a0 (Modify reader to first grab user credentials + request go server to generate and send credentials back to the reader to save in windows credential manager to refer back to)
 
 public class Event {
     public string song {get; set;}
