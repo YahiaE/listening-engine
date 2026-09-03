@@ -6,6 +6,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Net.Http;
 using System.Net.Http.Json;
+<<<<<<< HEAD
+=======
+using System.Text;
+using Meziantou.Framework.Win32;
+using System.Security.Cryptography;
+>>>>>>> 85993a0 (Modify reader to first grab user credentials + request go server to generate and send credentials back to the reader to save in windows credential manager to refer back to)
 
 public class Event {
     public string song {get; set;}
@@ -19,7 +25,15 @@ public class Event {
         album = am;
         played_at = pa;
     }
+
+   
 }
+
+ public class Credential
+    {
+        public string UserID { get; set; }
+        public string Token { get; set; }
+    }
 
 class Program {
 
@@ -32,13 +46,18 @@ class Program {
     private static string? _lastAlbumTitle;
 
     private static readonly HttpClient client = new HttpClient();
-
+    private static bool isRegistered = false;
+    // private static Windows.Security.Credentials.PasswordCredential credentials;
+    // private static Guid userID;
     static async Task Main(){
+       
         try {
-            
             Console.WriteLine("Initializing Windows Media Session Manager...");
             _sessionManager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
             Console.WriteLine("Session Manager Found!");
+
+            Console.WriteLine("Finding user credentials...");
+            isRegistered = haveCredentials();
 
             /* 
             event += event handler
@@ -53,15 +72,6 @@ class Program {
         } catch (Exception ex){
             Console.WriteLine($"Error receiving session manager: {ex.Message}");
         }
-        
-
-       
-
-        
-
-        
-        
-
     } 
 
     private static void OnCurrentSessionChanged(GlobalSystemMediaTransportControlsSessionManager sender, CurrentSessionChangedEventArgs args){
@@ -90,8 +100,27 @@ class Program {
             session.PlaybackInfoChanged += OnPlaybackStateChanged;
             _ = GrabMediaDataAsync(session);
         }
+    }
 
-       
+    private static bool haveCredentials(){
+         try {
+            var cred = CredentialManager.ReadCredential(applicationName: "listening-engine-auth");
+            Console.WriteLine($"ID: {cred.UserName}\nToken: {cred.Password}");
+            return true;
+        } catch (Exception ex){
+            Console.WriteLine("Unable to find credentials");
+            return false;
+        }
+    }
+
+    private static string getToken(){
+         try {
+            var cred = CredentialManager.ReadCredential(applicationName: "listening-engine-auth");
+            return cred.Password;
+        } catch (Exception ex){
+            Console.WriteLine("Unable to find token");
+            return "";
+        }
     }
 
     private static async void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args){
@@ -115,24 +144,68 @@ class Program {
             _lastTitle = props.Title;
             _lastAlbumTitle = props.AlbumTitle;
             _lastArtist = props.Artist;
-            
-            
-            if (props.Title != "") {
-                Console.WriteLine(props.Title + " seen");
-                var newEvent = new Event(props.Title, props.AlbumTitle, props.Artist, DateTime.UtcNow);
-                HttpResponseMessage response = await client.PostAsJsonAsync("http://172.19.164.243:5000", newEvent);
-                response.EnsureSuccessStatusCode();
 
-                string responseBody = await response.Content.ReadAsStringAsync();
-                Console.WriteLine("Response received:");
+            var newEvent = new Event(props.Title, props.AlbumTitle, props.Artist, DateTime.UtcNow);
+            
+
+            
+            
+
+            if (!isRegistered){
+                using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post,"http://172.19.164.243:5000");
+                tokenRequest.Headers.Add("Auth-Token", "");
+                using var tokenResponse = await client.SendAsync(tokenRequest);
+                tokenResponse.EnsureSuccessStatusCode();
+
+                string responseBody = await tokenResponse.Content.ReadAsStringAsync();
                 Console.WriteLine(responseBody);
+                
+                var credentials = JsonSerializer.Deserialize<Credential>(responseBody);
+                Console.WriteLine("Creating new credentials for local machine...");
+                CredentialManager.WriteCredential(
+                    applicationName: "listening-engine-auth",
+                    userName: credentials.UserID,
+                    secret: credentials.Token,
+                    comment: "Created credential for identity + auth for listening engine",
+                    persistence: CredentialPersistence.LocalMachine);
+                Console.WriteLine("Complete! Checking if credentials exist in manager...");
+                isRegistered = haveCredentials();
+                Console.WriteLine("Found!");
+            } else {
+                Console.WriteLine("Already registered! Storing event...");
             }
+
+            
+            using HttpRequestMessage eventRequest = new HttpRequestMessage(HttpMethod.Post,"http://172.19.164.243:5000"){
+                Content = JsonContent.Create(newEvent)
+            };
+
+            var userToken = getToken();
+            eventRequest.Headers.Add("Auth-Token", userToken);
+
+
+            using HttpResponseMessage eventResponse = await client.SendAsync(eventRequest);
+
+            if (eventResponse.IsSuccessStatusCode)
+            {
+                Console.WriteLine("Data sent successfully!");
+            }
+
+
+            
+           
+
+            
+            
+
+            
+            
             
 
            
             
         } catch (Exception ex){
-            Console.WriteLine($"Error: {ex.Message}");
+            Console.WriteLine($"HTTP Error: {ex.Message}");
         }
     }
 }
