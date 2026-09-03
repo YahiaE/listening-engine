@@ -187,27 +187,7 @@ class Program {
             
             eventRequest.Headers.Add("Auth-Token", userToken);
             using HttpResponseMessage eventResponse = await client.SendAsync(eventRequest);
-<<<<<<< Updated upstream
-
-            if (eventResponse.IsSuccessStatusCode)
-            {
-                Console.WriteLine("Data sent successfully!");
-            }
-
-
             
-           
-
-            
-            
-
-            
-            
-            
-
-=======
-            
->>>>>>> Stashed changes
         } catch (Exception ex){
             Console.WriteLine($"HTTP Error: {ex.Message}");
         } finally {
