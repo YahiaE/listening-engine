@@ -11,6 +11,9 @@ import (
 )
 
 var databasePool *sql.DB
+// var prevSong string
+// var prevArtist string
+// var prevAlbum string
 
 func handler(w http.ResponseWriter, r *http.Request){
 	var event models.ListeningEvent
@@ -22,6 +25,7 @@ func handler(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
+<<<<<<< Updated upstream
 	w.WriteHeader(http.StatusOK)
 	if event.UserID == uuid.Nil {
 		event.UserID = uuid.New()
@@ -29,6 +33,18 @@ func handler(w http.ResponseWriter, r *http.Request){
 		log.Println(len(byteSlice))
 		w.Write(byteSlice)
 	}
+=======
+	// if (event.Song == prevSong && event.Artist == prevArtist && event.Album == prevAlbum){
+	// 	return
+	// }
+
+	// prevSong = event.Song
+	// prevArtist = event.Artist
+	// prevAlbum = event.Album
+
+	
+	log.Println(event.Song)
+>>>>>>> Stashed changes
 
 	log.Println("Received body: ", event)
 

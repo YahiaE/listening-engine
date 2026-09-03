@@ -45,7 +45,10 @@ class Program {
     private static Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus? _lastStatus;
 
     private static readonly HttpClient client = new HttpClient();
-    private static bool isRegistered = false;
+    private static bool _isRegistered = false;
+    private static string? userToken;
+    // locks async 1 by 1 where there will be no overlap
+    private static readonly SemaphoreSlim _asyncLock = new SemaphoreSlim(1, 1); 
     // private static Windows.Security.Credentials.PasswordCredential credentials;
     // private static Guid userID;
     static async Task Main(){
@@ -56,7 +59,8 @@ class Program {
             Console.WriteLine("Session Manager Found!");
 
             Console.WriteLine("Finding user credentials...");
-            isRegistered = haveCredentials();
+            _isRegistered = haveCredentials();
+            setToken();
 
             /* 
             event += event handler
@@ -104,7 +108,6 @@ class Program {
     private static bool haveCredentials(){
          try {
             var cred = CredentialManager.ReadCredential(applicationName: "listening-engine-auth");
-            Console.WriteLine($"ID: {cred.UserName}\nToken: {cred.Password}");
             return true;
         } catch (Exception ex){
             Console.WriteLine("Unable to find credentials");
@@ -112,13 +115,12 @@ class Program {
         }
     }
 
-    private static string getToken(){
+    private static void setToken(){
          try {
             var cred = CredentialManager.ReadCredential(applicationName: "listening-engine-auth");
-            return cred.Password;
+            userToken = cred.Password;
         } catch (Exception ex){
             Console.WriteLine("Unable to find token");
-            return "";
         }
     }
 
@@ -138,7 +140,10 @@ class Program {
     }
 
     private static async Task GrabMediaDataAsync(GlobalSystemMediaTransportControlsSession session){
+        await _asyncLock.WaitAsync(); // unlock slot for async task
+
         try {
+            
             var props = await session.TryGetMediaPropertiesAsync();
 
             if (props == null || props.Title == "" || (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)){
@@ -150,13 +155,9 @@ class Program {
             _lastAlbumTitle = props.AlbumTitle;
             _lastArtist = props.Artist;
 
-            var newEvent = new Event(props.Title, props.AlbumTitle, props.Artist, DateTime.UtcNow);
+            var newEvent = new Event(props.Title, props.Artist, props.AlbumTitle, DateTime.UtcNow);
             
-
-            
-            
-
-            if (!isRegistered){
+            if (!_isRegistered){
                 using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post,"http://172.19.164.243:5000");
                 tokenRequest.Headers.Add("Auth-Token", "");
                 using var tokenResponse = await client.SendAsync(tokenRequest);
@@ -174,22 +175,19 @@ class Program {
                     comment: "Created credential for identity + auth for listening engine",
                     persistence: CredentialPersistence.LocalMachine);
                 Console.WriteLine("Complete! Checking if credentials exist in manager...");
-                isRegistered = haveCredentials();
+                _isRegistered = haveCredentials();
                 Console.WriteLine("Found!");
-            } else {
-                Console.WriteLine("Already registered! Storing event...");
-            }
-
+                setToken();
+            } 
             
             using HttpRequestMessage eventRequest = new HttpRequestMessage(HttpMethod.Post,"http://172.19.164.243:5000"){
                 Content = JsonContent.Create(newEvent)
             };
 
-            var userToken = getToken();
+            
             eventRequest.Headers.Add("Auth-Token", userToken);
-
-
             using HttpResponseMessage eventResponse = await client.SendAsync(eventRequest);
+<<<<<<< Updated upstream
 
             if (eventResponse.IsSuccessStatusCode)
             {
@@ -207,8 +205,13 @@ class Program {
             
             
 
+=======
+            
+>>>>>>> Stashed changes
         } catch (Exception ex){
             Console.WriteLine($"HTTP Error: {ex.Message}");
+        } finally {
+            _asyncLock.Release();
         }
     }
 }
