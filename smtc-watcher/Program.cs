@@ -29,8 +29,8 @@ public class Event {
 
  public class Credential
     {
-        public string UserID { get; set; }
-        public string Token { get; set; }
+        public string? UserID { get; set; }
+        public string? Token { get; set; }
     }
 
 class Program {
@@ -110,7 +110,7 @@ class Program {
             var cred = CredentialManager.ReadCredential(applicationName: "listening-engine-auth");
             return true;
         } catch (Exception ex){
-            Console.WriteLine("Unable to find credentials");
+            Console.WriteLine($"Unable to find credentials: {ex.Message}");
             return false;
         }
     }
@@ -120,7 +120,7 @@ class Program {
             var cred = CredentialManager.ReadCredential(applicationName: "listening-engine-auth");
             userToken = cred.Password;
         } catch (Exception ex){
-            Console.WriteLine("Unable to find token");
+            Console.WriteLine($"Unable to find token: {ex.Message}");
         }
     }
 
