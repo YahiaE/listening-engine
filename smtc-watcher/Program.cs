@@ -8,7 +8,6 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text;
 using Meziantou.Framework.Win32;
-using System.Security.Cryptography;
 
 public class Event {
     public Guid? user_id {get; set;}
