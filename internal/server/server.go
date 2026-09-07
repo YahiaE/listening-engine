@@ -80,7 +80,7 @@ func handler(w http.ResponseWriter, r *http.Request){
 
 
 func Start(port string, db *sql.DB){
-	databasePool = db
+	databasePool := db
 	stats := databasePool.Stats
 	fmt.Println(stats)
 	http.HandleFunc("/", handler)
