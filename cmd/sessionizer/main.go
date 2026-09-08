@@ -1,26 +1,17 @@
 package main
 
 import (
-	"os"
-	"log"
-	"fmt"
 	"github.com/YahiaE/listening-engine/internal/db"
-	"github.com/joho/godotenv"
+	"github.com/YahiaE/listening-engine/internal/server"
+	"github.com/YahiaE/listening-engine/internal/config"
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatalf("Failed to open .env: %v", err)
-	}
-	db_url := os.Getenv("DATABASE_URL")
-	db, err := db.NewDataBase(db_url)
-	if err != nil {
-		log.Fatalf("Failed to open DB: %v", err)
-	}
+	config.LoadEnv()
+	port := config.Get("PORT")
+	database := db.Start()
 
-	
+	defer database.Close()
 
-	fmt.Println("Connected!")
-
+	server.Start(port, database)
 }
