@@ -12,6 +12,7 @@ func main() {
 	database := db.Start()
 
 	defer database.Close()
-
+	
 	server.Start(port, database)
+	
 }
