@@ -34,7 +34,8 @@ func CreateTables(db *sql.DB) {
 	query := `
 	CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP);
 	CREATE TABLE IF NOT EXISTS auth_token (token TEXT PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE);
-	CREATE TABLE IF NOT EXISTS song (id TEXT PRIMARY KEY, title TEXT, artist TEXT, album TEXT);
+	CREATE TABLE IF NOT EXISTS song (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, title TEXT, artist TEXT, album TEXT);
+	CREATE UNIQUE INDEX IF NOT EXISTS uq_normalized_song ON song (LOWER(TRIM(title)), LOWER(TRIM(artist)), LOWER(TRIM(album)));
 	CREATE TABLE IF NOT EXISTS session (
 	id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -45,7 +46,7 @@ func CreateTables(db *sql.DB) {
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	session_id BIGINT NOT NULL REFERENCES session(id) ON DELETE CASCADE,
-    song_id TEXT NOT NULL REFERENCES song(id), 
+    song_id BIGINT NOT NULL REFERENCES song(id), 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 	`
@@ -56,7 +57,7 @@ func CreateTables(db *sql.DB) {
 	
 
 	if err != nil {
-		log.Println("Failed to establish tables in database")
+		log.Fatalf("Failed to establish tables in database: %v", err)
 	} else {
 		log.Println("Success!")
 	}

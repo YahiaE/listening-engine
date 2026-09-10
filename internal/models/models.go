@@ -13,20 +13,20 @@ type ListeningEvent struct {
 	UserID string `json:"user_id"` // foreign key
 	SongID string `json:"song_id"` // foreign key
 	SessionID int `json: "session_id` // foreign key
-	CreatedAt time.Time `json:"created_at"`
+	// created_at (timestamp) can be auto generated
 }
 
 // user => unique id based on UUID
 type User struct {
 	ID string `json:"id"` // primary key
-	CreatedAt time.Time `json:"created_at"`
+	// created_at (timestamp) can be auto generated
 }
 
 // token => connects back to user
 type AuthToken struct {
-	Token string `json:"auth_token"` // primary key
+	Token string `json:"token"` // primary key
 	UserID string `json:"user_id"` // foreign key
-	CreatedAt time.Time `json:"created_at"`
+	// created_at (timestamp) can be auto generated
 }
 
 // song => used as a way to not fill duplicate data (multiple events w/ same song but diff timestamps)

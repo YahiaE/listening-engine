@@ -2,16 +2,17 @@ package auth
 
 import (
     "crypto/rand"
-    "encoding/hex"
+	"crypto/sha256"
+	"encoding/hex"
 )
 
-func GenerateToken() (string, error) {
-    bytes := make([]byte, 32) 
+func GenerateToken() string {
+    return rand.Text()
+}
 
-    _, err := rand.Read(bytes)
-    if err != nil {
-        return "", err
-    }
-
-    return hex.EncodeToString(bytes), nil
+func EncryptToken(token string) string {
+	hashed := sha256.New()
+	hashed.Write([]byte(token))
+	encrypted := hashed.Sum(nil)
+	return hex.EncodeToString(encrypted)
 }
