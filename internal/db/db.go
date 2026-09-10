@@ -18,6 +18,11 @@ func NewDataBase(connString string) (*sql.DB, error){
 		return nil, err
 	}
 
+	db.SetMaxOpenConns(25)
+    db.SetMaxIdleConns(25)
+    db.SetConnMaxLifetime(5 * time.Minute)
+    db.SetConnMaxIdleTime(1 * time.Minute)
+
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, err
