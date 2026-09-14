@@ -208,7 +208,7 @@ func Sessionize(event *models.ListeningEvent) error {
 	defer tx.Rollback()
 
 
-	query := `SELECT id, end_at FROM session WHERE user_id = $1 ORDER BY end_at DESC LIMIT 1;`
+	query := `SELECT id, end_at FROM session WHERE user_id = $1 ORDER BY start_at DESC LIMIT 1;`
 	row := tx.QueryRowContext(ctx, query, event.UserID)
 	
 	/*
@@ -224,8 +224,8 @@ func Sessionize(event *models.ListeningEvent) error {
 	if err == sql.ErrNoRows { // no sessions
 		log.Printf("User %v has no listening sessions. Creating session now...", event.UserID)
 		
-		query = `INSERT into session (user_id, start_at, end_at) VALUES ($1, $2, $3) RETURNING id;`
-		err = tx.QueryRowContext(ctx, query, event.UserID, event.PlayedAt, timeEnd).Scan(&session_id)
+		query = `INSERT into session (user_id, start_at) VALUES ($1, $2) RETURNING id;`
+		err = tx.QueryRowContext(ctx, query, event.UserID, event.PlayedAt).Scan(&session_id)
 
 		if err != nil {
 			log.Println("Failed to insert new session for user")
@@ -249,7 +249,7 @@ func Sessionize(event *models.ListeningEvent) error {
 			return err
 		}
 		
-		if event.PlayedAt.Sub(mostRecentEventTime) > 30 * time.Minute { 
+		if event.PlayedAt.Sub(mostRecentEventTime) > (30 * time.Minute) { 
 			query = `UPDATE session SET end_at = $1 WHERE user_id = $2 AND id = $3`
 			_, err = tx.ExecContext(ctx, query, event.PlayedAt, event.UserID, session_id)
 
@@ -259,8 +259,8 @@ func Sessionize(event *models.ListeningEvent) error {
 			}
 			
 
-			query = `INSERT into session (user_id, start_at, end_at) VALUES ($1, $2, $3) RETURNING id;`
-			err = tx.QueryRowContext(ctx, query, event.UserID, event.PlayedAt, timeEnd).Scan(&session_id)
+			query = `INSERT into session (user_id, start_at) VALUES ($1, $2, $3) RETURNING id;`
+			err = tx.QueryRowContext(ctx, query, event.UserID, event.PlayedAt).Scan(&session_id)
 
 			if err != nil {
 				log.Println("Failed to insert new session for user")
