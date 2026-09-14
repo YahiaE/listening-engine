@@ -10,8 +10,8 @@ func main() {
 	config.LoadEnv()
 	port := config.Get("PORT")
 	database := db.Start()
-
 	defer database.Close()
-
+	
 	server.Start(port, database)
+	
 }
