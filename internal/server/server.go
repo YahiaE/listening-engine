@@ -11,11 +11,13 @@ import (
 	"github.com/YahiaE/listening-engine/internal/auth"
 	"github.com/google/uuid"
 	"time"
+	"github.com/hashicorp/golang-lru/v2"
 	"context"
 
 )
 
 var databasePool *sql.DB
+var auth_cache *lru.Cache[string, string]
 
 
 func handler(w http.ResponseWriter, r *http.Request){
@@ -35,6 +37,9 @@ func handler(w http.ResponseWriter, r *http.Request){
 		isNewUser = true
 		newUserUUID := uuid.New().String()
 		newUserToken := auth.GenerateToken()
+		
+		log.Println("Adding user to cache...")
+		auth_cache.Add(newUserUUID, auth.EncryptToken(newUserToken))
 
 		user.ID = newUserUUID
 
@@ -60,11 +65,21 @@ func handler(w http.ResponseWriter, r *http.Request){
 
 	if !isNewUser {
 		log.Println("Found credentials. Cross-checking with database...")
-		isValidUser := checkUser(userID, auth.EncryptToken(userToken))
+		
+		cachedUserToken, ok := auth_cache.Get(userID)
+		matchCache := false
+
+		if !ok {
+			log.Println("User not found in cache... checking database for auth")
+		} else {
+			matchCache = (auth.EncryptToken(userToken) == cachedUserToken)
+		}
+
+
 		
 		// check if token received is associated with the user
 		// if token exist + connected to user => add event
-		if isValidUser {
+		if matchCache || checkUser(userID, auth.EncryptToken(userToken)) {
 			var songRead models.Song 
 
 			bodyBytes, err := io.ReadAll(r.Body)
@@ -84,7 +99,10 @@ func handler(w http.ResponseWriter, r *http.Request){
 			}
 
 			
-			
+			if songRead.Title == "" {
+				log.Println("Logged empty song")
+				return
+			}
 			songID, err := storeSong(songRead)
 
 			if err != nil {
@@ -92,25 +110,16 @@ func handler(w http.ResponseWriter, r *http.Request){
 				return
 			}
 
-			log.Printf("Song: %v, ID: %v", songRead, songID)
-
-			log.Println(userID)
-			userEvent, err := storeEvent(userID, songID)
-			log.Printf("user id: %v \n song id: %v \n session id: %v", userEvent.UserID, userEvent.SongID, userEvent.SessionID)
-
+			err = storeAndSessionizeEvent(userID, songID)
+			
 			if err != nil {
 				http.Error(w, "Internal server error: Unable to store event data", http.StatusInternalServerError)
 				return
 			}
-			
-			
-		
-			
 
 		} else {
 			log.Println("Expired token! Regenerating...")
 		}
-		// when event added => sessionize it
 	}
 
 }
@@ -147,30 +156,6 @@ func storeUserAndToken(userID string, token string) error {
 	return tx.Commit()
 }
 
-func storeEvent(user_id string, song_id int64) (models.ListeningEvent, error){
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	var userEvent models.ListeningEvent
-	userEvent.UserID = user_id
-	userEvent.SongID = song_id
-	userEvent.PlayedAt = time.Now()
-
-	err := Sessionize(&userEvent)
-	if err != nil {
-		log.Println(err)
-		return models.ListeningEvent{}, err
-	}
-
-	query := `INSERT INTO event (user_id, song_id, session_id, played_at) VALUES ($1, $2, $3, $4)`
-	_, err = databasePool.ExecContext(ctx, query, user_id, song_id, userEvent.SessionID, userEvent.PlayedAt)
-
-	
-
-	return userEvent, nil
-
-	
-}
 
 func storeSong(song models.Song) (int64, error){
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -195,11 +180,39 @@ func storeSong(song models.Song) (int64, error){
 	return songID, nil
 }
 
-func Sessionize(event *models.ListeningEvent) error {	
+func storeAndSessionizeEvent(user_id string, song_id int64) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    tx, err := databasePool.BeginTx(ctx, nil)
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    query := `SELECT event_id, s_id, time_created FROM create_event_and_session($1, $2);`
+    
+    row := tx.QueryRowContext(ctx, query, user_id, song_id)
+
+    var eventID int64
+    var sessionID int64
+    var createdAt time.Time
+    err = row.Scan(&eventID, &sessionID, &createdAt)
+    if err != nil {
+        log.Println(err)
+        return err
+    }
+
+    log.Printf("Stored event of ID %v into Session %v. Time made: %v", eventID, sessionID, createdAt)
+
+    return tx.Commit()
+}
+
+func EstablishStorageFunction(db *sql.DB) error {	
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	tx, err := databasePool.BeginTx(ctx, nil)
+	tx, err := db.BeginTx(ctx, nil)
 
 	if err != nil {
 		return err
@@ -207,76 +220,61 @@ func Sessionize(event *models.ListeningEvent) error {
 
 	defer tx.Rollback()
 
+	query := `
+	CREATE OR REPLACE FUNCTION create_event_and_session(p_user_id UUID, p_song_id BIGINT)
+	RETURNS TABLE (event_id BIGINT, s_id BIGINT, time_created TIMESTAMPTZ) AS $$
+	DECLARE
+    	sess_id BIGINT;
+    	new_event_id BIGINT;
+    	created_at TIMESTAMPTZ := NOW();
+    	most_recent TIMESTAMPTZ;
+    	diff INT;
+	BEGIN
+    	SELECT id INTO sess_id
+    	FROM session 
+    	WHERE user_id = p_user_id
+    	ORDER BY start_at DESC LIMIT 1;
 
-	query := `SELECT id, end_at FROM session WHERE user_id = $1 ORDER BY end_at DESC LIMIT 1;`
-	row := tx.QueryRowContext(ctx, query, event.UserID)
-	
-	/*
-	timeEnd not defined = 0 value => basically a placeholder for now. 
-	basically should have an end when a new session is made beyond the current 
-	(current event time - latest event time from most recent session > 30 minutes)
-	*/
-	
-	var timeEnd time.Time
-	var session_id int64
-	err = row.Scan(&session_id, &timeEnd)
+    	IF sess_id IS NULL THEN
+        	INSERT INTO session (user_id, start_at) VALUES (p_user_id, created_at) RETURNING id INTO sess_id;
+        	INSERT INTO event (user_id, song_id, session_id, played_at) VALUES (p_user_id, p_song_id, sess_id, created_at) RETURNING id INTO new_event_id;
+   		ELSE
+        	SELECT played_at INTO most_recent
+        	FROM event WHERE user_id = p_user_id AND session_id = sess_id 
+        	ORDER BY played_at DESC LIMIT 1;
 
-	if err == sql.ErrNoRows { // no sessions
-		log.Printf("User %v has no listening sessions. Creating session now...", event.UserID)
-		
-		query = `INSERT into session (user_id, start_at, end_at) VALUES ($1, $2, $3) RETURNING id;`
-		err = tx.QueryRowContext(ctx, query, event.UserID, event.PlayedAt, timeEnd).Scan(&session_id)
+        	IF NOT FOUND THEN
+            	INSERT INTO event (user_id, song_id, session_id, played_at) VALUES (p_user_id, p_song_id, sess_id, created_at) RETURNING id INTO new_event_id;
+        	ELSE
+            	SELECT (EXTRACT(EPOCH FROM (created_at - most_recent)) / 60)::integer INTO diff;
+            	IF diff > 30 THEN
+                	UPDATE session SET end_at = created_at WHERE user_id = p_user_id AND id = sess_id;
+                	INSERT INTO session (user_id, start_at) VALUES (p_user_id, created_at) RETURNING id INTO sess_id;
+                	INSERT INTO event (user_id, song_id, session_id, played_at) VALUES (p_user_id, p_song_id, sess_id, created_at) RETURNING id INTO new_event_id;
+            	ELSE
+                	INSERT INTO event (user_id, song_id, session_id, played_at) VALUES (p_user_id, p_song_id, sess_id, created_at) RETURNING id INTO new_event_id;
+            	END IF;
+        	END IF;
+    	END IF;
 
-		if err != nil {
-			log.Println("Failed to insert new session for user")
-			return err
-		}
+    	RETURN QUERY SELECT new_event_id, sess_id, created_at;
 
-		event.SessionID = session_id
+	EXCEPTION
+    	WHEN OTHERS THEN
+        RAISE EXCEPTION 'An unexpected error occurred: % (Code: %)', SQLERRM, SQLSTATE;
+	END;
+	$$ LANGUAGE plpgsql;
+	`
+	_, err = tx.ExecContext(ctx, query)
 
-	} else if err != nil { // error with session
-		log.Println("Failed to grab recent session from user")
+	if err != nil {
+		log.Println("Unable to set up logic for storing events + sessions")
 		return err
-	} else { // check current session for time gap > 30 or not
-
-		// if gap > 30 => update end_time for current session and create new session that new event will belong to
-		query = `SELECT played_at FROM event WHERE user_id = $1 AND session_id = $2 ORDER BY played_at DESC LIMIT 1;` // grab time from most rec event
-		row = tx.QueryRowContext(ctx, query, event.UserID, session_id)
-		var mostRecentEventTime time.Time
-		err := row.Scan(&mostRecentEventTime)
-		if err != nil {
-			log.Println("Failed to grab most recent event session for user")
-			return err
-		}
-		
-		if event.PlayedAt.Sub(mostRecentEventTime) > 30 * time.Minute { 
-			query = `UPDATE session SET end_at = $1 WHERE user_id = $2 AND id = $3`
-			_, err = tx.ExecContext(ctx, query, event.PlayedAt, event.UserID, session_id)
-
-			if err != nil {
-				log.Println("Failed to update end time of most recent event session for user")
-				return err
-			}
-			
-
-			query = `INSERT into session (user_id, start_at, end_at) VALUES ($1, $2, $3) RETURNING id;`
-			err = tx.QueryRowContext(ctx, query, event.UserID, event.PlayedAt, timeEnd).Scan(&session_id)
-
-			if err != nil {
-				log.Println("Failed to insert new session for user")
-				return err
-			}
-
-			event.SessionID = session_id
-
-		} else { // event belongs in current session
-			event.SessionID = session_id
-		}	
 	}
 
+	log.Println("Established logic for storing events + sessions")
+	
 	return tx.Commit()
-	
-	
 }
 
 func checkUser(userID string, token string) bool{
@@ -297,9 +295,11 @@ func checkUser(userID string, token string) bool{
 	}
 
 	if token == foundToken {
+		log.Println("Found user in db! Adding to cache...")
+		auth_cache.Add(userID, token)
 		return true
 	} 
-	log.Println(foundToken)
+	
 	return false
     
 	
@@ -309,7 +309,8 @@ func checkUser(userID string, token string) bool{
 	
 
 
-func Start(port string, db *sql.DB){
+func Start(cache *lru.Cache[string, string], port string, db *sql.DB){
+	auth_cache = cache
 	databasePool = db
 	http.HandleFunc("/", handler)
 

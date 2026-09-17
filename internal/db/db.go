@@ -50,7 +50,7 @@ func CreateTables(db *sql.DB) {
     start_at TIMESTAMP WITH TIME ZONE, 
     end_at TIMESTAMP WITH TIME ZONE
 	);
-	CREATE INDEX IF NOT EXISTS most_recent_session ON session(user_id, end_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_session_user_start_desc ON session(user_id, start_at DESC);
 
 	CREATE TABLE IF NOT EXISTS event (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, 
@@ -59,6 +59,8 @@ func CreateTables(db *sql.DB) {
     song_id BIGINT NOT NULL REFERENCES song(id), 
     played_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE INDEX IF NOT EXISTS idx_user_event_by_session_desc ON event(user_id, session_id, played_at DESC);
 	`
 
 	log.Println("Establishing tables in database...")
