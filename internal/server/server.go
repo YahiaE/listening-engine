@@ -11,11 +11,13 @@ import (
 	"github.com/YahiaE/listening-engine/internal/auth"
 	"github.com/google/uuid"
 	"time"
+	"github.com/hashicorp/golang-lru/v2"
 	"context"
 
 )
 
 var databasePool *sql.DB
+var auth_cache *lru.Cache[string, string]
 
 
 func handler(w http.ResponseWriter, r *http.Request){
@@ -35,6 +37,9 @@ func handler(w http.ResponseWriter, r *http.Request){
 		isNewUser = true
 		newUserUUID := uuid.New().String()
 		newUserToken := auth.GenerateToken()
+		
+		log.Println("Adding user to cache...")
+		auth_cache.Add(newUserUUID, auth.EncryptToken(newUserToken))
 
 		user.ID = newUserUUID
 
@@ -60,11 +65,21 @@ func handler(w http.ResponseWriter, r *http.Request){
 
 	if !isNewUser {
 		log.Println("Found credentials. Cross-checking with database...")
-		isValidUser := checkUser(userID, auth.EncryptToken(userToken))
+		
+		cachedUserToken, ok := auth_cache.Get(userID)
+		matchCache := false
+
+		if !ok {
+			log.Println("User not found in cache... checking database for auth")
+		} else {
+			matchCache = (auth.EncryptToken(userToken) == cachedUserToken)
+		}
+
+
 		
 		// check if token received is associated with the user
 		// if token exist + connected to user => add event
-		if isValidUser {
+		if matchCache || checkUser(userID, auth.EncryptToken(userToken)) {
 			var songRead models.Song 
 
 			bodyBytes, err := io.ReadAll(r.Body)
@@ -84,7 +99,10 @@ func handler(w http.ResponseWriter, r *http.Request){
 			}
 
 			
-			
+			if songRead.Title == "" {
+				log.Println("Logged empty song")
+				return
+			}
 			songID, err := storeSong(songRead)
 
 			if err != nil {
@@ -98,10 +116,6 @@ func handler(w http.ResponseWriter, r *http.Request){
 				http.Error(w, "Internal server error: Unable to store event data", http.StatusInternalServerError)
 				return
 			}
-			
-			
-		
-			
 
 		} else {
 			log.Println("Expired token! Regenerating...")
@@ -281,9 +295,11 @@ func checkUser(userID string, token string) bool{
 	}
 
 	if token == foundToken {
+		log.Println("Found user in db! Adding to cache...")
+		auth_cache.Add(userID, token)
 		return true
 	} 
-	log.Println(foundToken)
+	
 	return false
     
 	
@@ -293,7 +309,8 @@ func checkUser(userID string, token string) bool{
 	
 
 
-func Start(port string, db *sql.DB){
+func Start(cache *lru.Cache[string, string], port string, db *sql.DB){
+	auth_cache = cache
 	databasePool = db
 	http.HandleFunc("/", handler)
 
