@@ -20,6 +20,12 @@ func main() {
 	database := db.Start()
 	defer database.Close()
 
+	err = server.EstablishStorageFunction(database)
+
+	if err != nil {
+		log.Println(err)
+	}
+	
 	server.Start(cache, port, database)
 
 	
