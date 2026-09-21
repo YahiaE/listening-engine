@@ -207,7 +207,7 @@ class Program {
             if (_isRegistered) {
                 var props = await session.TryGetMediaPropertiesAsync();
 
-                if (props == null || (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)){
+                if (props == null || props.Title == "" || props.Artist == "" || props.AlbumTitle == "" || (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)){
                     return;
                 }
         
