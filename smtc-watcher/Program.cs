@@ -52,10 +52,9 @@ class Program {
     private static bool _isRegistered = false;
     private static string? userToken;
     private static string? userID;
+    private static readonly string url = "http://172.19.164.243:5000";
     // locks async 1 by 1 where there will be no overlap
     private static readonly SemaphoreSlim _asyncLock = new SemaphoreSlim(1, 1); 
-    // private static Windows.Security.Credentials.PasswordCredential credentials;
-    // private static Guid userID;
     static async Task Main(){
        
         try {
@@ -68,7 +67,7 @@ class Program {
                 Console.WriteLine("Set!");
             } else {
                 Console.WriteLine("Not found!");
-                registerCredentials();
+                await registerCredentials();
             }
 
             Console.WriteLine("Initializing Windows Media Session Manager...");
@@ -140,8 +139,18 @@ class Program {
         }
     }
 
-    private static async void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args){
-        await GrabMediaDataAsync(sender);
+    private static void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args){
+        // run function through threadpool thread and return a task to monitor it
+        Task.Run(async() => 
+            {
+                try {
+                    await GrabMediaDataAsync(sender);
+                } catch (Exception ex){
+                    Console.WriteLine($"Unable to process media changes: {ex.Message}");
+                }
+            }
+        );
+  
     }
 
     private static void OnPlaybackStateChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args){
@@ -155,10 +164,10 @@ class Program {
         
     }
 
-    private static async void registerCredentials(){
+    private static async Task registerCredentials(){ // return Task to track progress + make sure it can be used with await to allow register
 
         try {
-            using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post,"http://172.19.164.243:5000");
+            using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post,url);
             tokenRequest.Headers.Add("Auth-Token", "");
             tokenRequest.Headers.Add("User-ID", "");
         
@@ -207,10 +216,13 @@ class Program {
             if (_isRegistered) {
                 var props = await session.TryGetMediaPropertiesAsync();
 
-                if (props == null || props.Title == "" || props.Artist == "" || props.AlbumTitle == "" || (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)){
+                if (props == null || props.Title == "" || props.Artist == "" || props.AlbumTitle == ""){
                     return;
                 }
         
+                if (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle){
+                    return;
+                }
 
                 _lastTitle = props.Title;
                 _lastAlbumTitle = props.AlbumTitle;
@@ -219,7 +231,7 @@ class Program {
 <<<<<<< Updated upstream
                 var newEvent = new Event(props.Title, props.Artist, props.AlbumTitle);
             
-                using HttpRequestMessage eventRequest = new HttpRequestMessage(HttpMethod.Post,"http://172.19.164.243:5000"){
+                using HttpRequestMessage eventRequest = new HttpRequestMessage(HttpMethod.Post,url){
                     Content = JsonContent.Create(newEvent)
 =======
             if (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)
