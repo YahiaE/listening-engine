@@ -74,13 +74,8 @@ class Program
             }
             else
             {
-                Console.WriteLine("Not found! Registering with server...");
-                bool success = await RegisterCredentialsAsync();
-                if (!success)
-                {
-                    Console.WriteLine("Failed to register with server. Exiting setup.");
-                    return;
-                }
+                Console.WriteLine("Not found!");
+                await RegisterCredentialsAsync();
             }
 
             Console.WriteLine("Initializing Windows Media Session Manager...");
@@ -232,10 +227,7 @@ class Program
         {
             if (!_isRegistered) return;
 
-                if (props == null || props.Title == "" || props.Artist == "" || props.AlbumTitle == "" || (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)){
-                    return;
-                }
-        
+            var props = await session.TryGetMediaPropertiesAsync();
 
             if (props == null || string.IsNullOrWhiteSpace(props.Title) || string.IsNullOrWhiteSpace(props.Artist))
             {
@@ -255,11 +247,9 @@ class Program
         }
         finally
         {
-            // Lock released immediately after local state check/update!
             _asyncLock.Release();
         }
 
-        // Perform HTTP IO outside the lock so subsequent GSMTC events aren't blocked
         if (eventToSend != null)
         {
             try
