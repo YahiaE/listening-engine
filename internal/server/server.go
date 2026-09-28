@@ -8,6 +8,7 @@ import (
 	"log"
 	"database/sql"
 	"github.com/YahiaE/listening-engine/internal/models"
+	"github.com/YahiaE/listening-engine/internal/store"
 	"github.com/YahiaE/listening-engine/internal/auth"
 	"github.com/google/uuid"
 	"time"
@@ -60,10 +61,10 @@ func handler(w http.ResponseWriter, r *http.Request){
 				return
 			}
 
-			songID := storeSong(databasePool, songRead)
+			songID := store.StoreSong(databasePool, songRead)
 
 			if songID > -1 {
-				storeAndSessionizeEvent(databasePool, userID, songID)
+				store.StoreAndSessionizeEvent(databasePool, userID, songID)
 			}
 
 		} else {
@@ -97,7 +98,10 @@ func checkUser(userID string, token string) bool{
 	} 
 	
 	return false
+<<<<<<< HEAD
+=======
     
+>>>>>>> dev
 }
 
 func isNewUser(userID string, w http.ResponseWriter) bool{
@@ -112,8 +116,16 @@ func isNewUser(userID string, w http.ResponseWriter) bool{
 
 		token.Token = newUserToken
 		token.UserID = newUserUUID
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9a8dd1e (refactor(server): deleted un-used packages + move storage logic to individual folder)
+		store.StoreUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
+=======
 
 		storeUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
+>>>>>>> dev
 		tokenJson, err := json.Marshal(token)
 
 		if err != nil {
