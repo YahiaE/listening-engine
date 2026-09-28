@@ -61,6 +61,10 @@ func handler(w http.ResponseWriter, r *http.Request){
 				return
 			}
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9a8dd1e (refactor(server): deleted un-used packages + move storage logic to individual folder)
 			songID := store.StoreSong(databasePool, songRead)
 
 			if songID > -1 {
@@ -112,6 +116,10 @@ func isNewUser(userID string, w http.ResponseWriter) bool{
 
 		token.Token = newUserToken
 		token.UserID = newUserUUID
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9a8dd1e (refactor(server): deleted un-used packages + move storage logic to individual folder)
 		store.StoreUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
 		tokenJson, err := json.Marshal(token)
 
