@@ -232,7 +232,10 @@ class Program
         {
             if (!_isRegistered) return;
 
-            var props = await session.TryGetMediaPropertiesAsync();
+                if (props == null || props.Title == "" || props.Artist == "" || props.AlbumTitle == "" || (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)){
+                    return;
+                }
+        
 
             if (props == null || string.IsNullOrWhiteSpace(props.Title) || string.IsNullOrWhiteSpace(props.Artist))
             {

@@ -23,53 +23,11 @@ var auth_cache *lru.Cache[string, string]
 func handler(w http.ResponseWriter, r *http.Request){
 	userID := r.Header.Get("User-ID")
 	userToken := r.Header.Get("Auth-Token")
-	// isRegistered := false
-
-	if len(userToken) == 0 {
-		log.Println("Received empty token. Generating ID and token for user")
-		isNewUser = true
-		newUserUUID := uuid.New().String()
-		newUserToken := auth.GenerateToken()
-		
-		log.Println("Adding user to cache...")
-		auth_cache.Add(newUserUUID, auth.EncryptToken(newUserToken))
-
-		user.ID = newUserUUID
-
-		token.Token = newUserToken
-		token.UserID = user.ID
-
-		storeUserAndToken(newUserUUID,auth.EncryptToken(newUserToken))
-		tokenJson, err := json.Marshal(token)
-
-		if err != nil {
-			http.Error(w, "Internal server error: Unable to format credentials", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(tokenJson)		
-
-		return
-	}
-
 
 	isNewUser := isNewUser(userID, w)
 
 	if !isNewUser {
 		log.Println("Found credentials. Cross-checking with database...")
-		
-		cachedUserToken, ok := auth_cache.Get(userID)
-		matchCache := false
-
-		if !ok {
-			log.Println("User not found in cache... checking database for auth")
-		} else {
-			matchCache = (auth.EncryptToken(userToken) == cachedUserToken)
-		}
-
-
 		
 		cachedUserToken, ok := auth_cache.Get(userID)
 		matchCache := false
@@ -98,15 +56,8 @@ func handler(w http.ResponseWriter, r *http.Request){
 				return
 			}
 
-			
 			if songRead.Title == "" {
 				log.Println("Logged empty song")
-				return
-			}
-			songID, err := storeSong(songRead)
-
-			if err != nil {
-				http.Error(w, "Internal server error: Unable to store song data", http.StatusInternalServerError)
 				return
 			}
 
@@ -147,7 +98,6 @@ func checkUser(userID string, token string) bool{
 	} 
 	
 	return false
-    
 }
 
 func isNewUser(userID string, w http.ResponseWriter) bool{
@@ -162,7 +112,6 @@ func isNewUser(userID string, w http.ResponseWriter) bool{
 
 		token.Token = newUserToken
 		token.UserID = newUserUUID
-
 		store.StoreUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
 		tokenJson, err := json.Marshal(token)
 
@@ -181,10 +130,6 @@ func isNewUser(userID string, w http.ResponseWriter) bool{
 	return false
 }
 	
-
-	
-
-
 func Start(cache *lru.Cache[string, string], port string, db *sql.DB){
 	auth_cache = cache
 	databasePool = db
