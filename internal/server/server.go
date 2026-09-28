@@ -62,6 +62,7 @@ func handler(w http.ResponseWriter, r *http.Request){
 			}
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 
 >>>>>>> 9a8dd1e (refactor(server): deleted un-used packages + move storage logic to individual folder)
@@ -69,6 +70,12 @@ func handler(w http.ResponseWriter, r *http.Request){
 
 			if songID > -1 {
 				store.StoreAndSessionizeEvent(databasePool, userID, songID)
+=======
+			songID := storeSong(databasePool, songRead)
+
+			if songID > -1 {
+				storeAndSessionizeEvent(databasePool, userID, songID)
+>>>>>>> dev
 			}
 
 		} else {
@@ -102,6 +109,10 @@ func checkUser(userID string, token string) bool{
 	} 
 	
 	return false
+<<<<<<< HEAD
+=======
+    
+>>>>>>> dev
 }
 
 func isNewUser(userID string, w http.ResponseWriter) bool{
@@ -117,10 +128,15 @@ func isNewUser(userID string, w http.ResponseWriter) bool{
 		token.Token = newUserToken
 		token.UserID = newUserUUID
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 
 >>>>>>> 9a8dd1e (refactor(server): deleted un-used packages + move storage logic to individual folder)
 		store.StoreUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
+=======
+
+		storeUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
+>>>>>>> dev
 		tokenJson, err := json.Marshal(token)
 
 		if err != nil {
