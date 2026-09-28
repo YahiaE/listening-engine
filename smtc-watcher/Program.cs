@@ -74,8 +74,13 @@ class Program
             }
             else
             {
-                Console.WriteLine("Not found!");
-                await RegisterCredentialsAsync();
+                Console.WriteLine("Not found! Registering with server...");
+                bool success = await RegisterCredentialsAsync();
+                if (!success)
+                {
+                    Console.WriteLine("Failed to register with server. Exiting setup.");
+                    return;
+                }
             }
 
             Console.WriteLine("Initializing Windows Media Session Manager...");
