@@ -61,21 +61,10 @@ func handler(w http.ResponseWriter, r *http.Request){
 				return
 			}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-
->>>>>>> 9a8dd1e (refactor(server): deleted un-used packages + move storage logic to individual folder)
 			songID := store.StoreSong(databasePool, songRead)
 
 			if songID > -1 {
 				store.StoreAndSessionizeEvent(databasePool, userID, songID)
-=======
-			songID := storeSong(databasePool, songRead)
-
-			if songID > -1 {
-				storeAndSessionizeEvent(databasePool, userID, songID)
->>>>>>> dev
 			}
 
 		} else {
