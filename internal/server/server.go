@@ -8,6 +8,7 @@ import (
 	"log"
 	"database/sql"
 	"github.com/YahiaE/listening-engine/internal/models"
+	"github.com/YahiaE/listening-engine/internal/store"
 	"github.com/YahiaE/listening-engine/internal/auth"
 	"github.com/google/uuid"
 	"time"
@@ -60,10 +61,10 @@ func handler(w http.ResponseWriter, r *http.Request){
 				return
 			}
 
-			songID := storeSong(databasePool, songRead)
+			songID := store.StoreSong(databasePool, songRead)
 
 			if songID > -1 {
-				storeAndSessionizeEvent(databasePool, userID, songID)
+				store.StoreAndSessionizeEvent(databasePool, userID, songID)
 			}
 
 		} else {
@@ -98,6 +99,12 @@ func checkUser(userID string, token string) bool{
 	
 	return false
     
+<<<<<<< HEAD
+=======
+<<<<<<< Updated upstream
+	
+=======
+>>>>>>> d8ce9f9 (refactor(server): deleted un-used packages + move storage logic to individual folder)
 }
 
 func isNewUser(userID string, w http.ResponseWriter) bool{
@@ -113,7 +120,11 @@ func isNewUser(userID string, w http.ResponseWriter) bool{
 		token.Token = newUserToken
 		token.UserID = newUserUUID
 
+<<<<<<< HEAD
 		storeUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
+=======
+		store.StoreUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
+>>>>>>> d8ce9f9 (refactor(server): deleted un-used packages + move storage logic to individual folder)
 		tokenJson, err := json.Marshal(token)
 
 		if err != nil {
@@ -129,6 +140,10 @@ func isNewUser(userID string, w http.ResponseWriter) bool{
 	}
 
 	return false
+<<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
+>>>>>>> d8ce9f9 (refactor(server): deleted un-used packages + move storage logic to individual folder)
 }
 	
 func Start(cache *lru.Cache[string, string], port string, db *sql.DB){
