@@ -8,6 +8,7 @@ import (
 	"log"
 	"database/sql"
 	"github.com/YahiaE/listening-engine/internal/models"
+	"github.com/YahiaE/listening-engine/internal/store"
 	"github.com/YahiaE/listening-engine/internal/auth"
 	"github.com/google/uuid"
 	"time"
@@ -92,11 +93,18 @@ func handler(w http.ResponseWriter, r *http.Request){
 				return
 			}
 
+<<<<<<< Updated upstream
 			err = storeAndSessionizeEvent(userID, songID)
 			
 			if err != nil {
 				http.Error(w, "Internal server error: Unable to store event data", http.StatusInternalServerError)
 				return
+=======
+			songID := store.StoreSong(databasePool, songRead)
+
+			if songID > -1 {
+				store.StoreAndSessionizeEvent(databasePool, userID, songID)
+>>>>>>> Stashed changes
 			}
 			
 			
@@ -286,7 +294,41 @@ func checkUser(userID string, token string) bool{
 	log.Println(foundToken)
 	return false
     
+<<<<<<< Updated upstream
 	
+=======
+}
+
+func isNewUser(userID string, w http.ResponseWriter) bool{
+	if len(userID) == 0 { // If no credentials, generate user ID + token and send to C# reader
+		var token models.AuthToken
+		log.Println("Received empty token. Generating ID and token for user")
+		newUserUUID := uuid.New().String()
+		newUserToken := auth.GenerateToken()
+		
+		log.Println("Adding user to cache...")
+		auth_cache.Add(newUserUUID, auth.EncryptToken(newUserToken))
+
+		token.Token = newUserToken
+		token.UserID = newUserUUID
+
+		store.StoreUserAndToken(databasePool, newUserUUID,auth.EncryptToken(newUserToken))
+		tokenJson, err := json.Marshal(token)
+
+		if err != nil {
+			http.Error(w, "Internal server error: Unable to format credentials", http.StatusInternalServerError)
+			return false
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(tokenJson)		
+
+		return true
+	}
+
+	return false
+>>>>>>> Stashed changes
 }
 	
 

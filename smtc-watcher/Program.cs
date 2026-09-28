@@ -216,10 +216,41 @@ class Program {
                 _lastAlbumTitle = props.AlbumTitle;
                 _lastArtist = props.Artist;
 
+<<<<<<< Updated upstream
                 var newEvent = new Event(props.Title, props.Artist, props.AlbumTitle);
             
                 using HttpRequestMessage eventRequest = new HttpRequestMessage(HttpMethod.Post,"http://172.19.164.243:5000"){
                     Content = JsonContent.Create(newEvent)
+=======
+            if (props.Title == _lastTitle && props.Artist == _lastArtist && props.AlbumTitle == _lastAlbumTitle)
+            {
+                return;
+            }
+
+            _lastTitle = props.Title;
+            _lastAlbumTitle = props.AlbumTitle;
+            _lastArtist = props.Artist;
+            
+
+            
+
+            eventToSend = new Event(props.Title, props.Artist, props.AlbumTitle);
+        }
+        finally
+        {
+            // Lock released immediately after local state check/update!
+            _asyncLock.Release();
+        }
+
+        // Perform HTTP IO outside the lock so subsequent GSMTC events aren't blocked
+        if (eventToSend != null)
+        {
+            try
+            {
+                using HttpRequestMessage eventRequest = new HttpRequestMessage(HttpMethod.Post, ServerUrl)
+                {
+                    Content = JsonContent.Create(eventToSend)
+>>>>>>> Stashed changes
                 };
 
             
