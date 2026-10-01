@@ -1,143 +1,159 @@
 package server
 
 import (
-	"fmt"
-	"encoding/json"
-	"net/http"
-	"io"
-	"log"
+	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/google/uuid"
+	lru "github.com/hashicorp/golang-lru/v2"
+
+	"github.com/YahiaE/listening-engine/internal/auth"
 	"github.com/YahiaE/listening-engine/internal/models"
 	"github.com/YahiaE/listening-engine/internal/store"
-	"github.com/YahiaE/listening-engine/internal/auth"
-	"github.com/google/uuid"
-	"time"
-	"github.com/hashicorp/golang-lru/v2"
-	"context"
-
 )
 
-var databasePool *sql.DB
-var auth_cache *lru.Cache[string, string]
+// Server holds dependencies for HTTP handlers (Dependency Injection)
+type Server struct {
+	db        *sql.DB
+	authCache *lru.Cache[string, string] // Key: encryptedToken, Value: userID
+}
 
-func handler(w http.ResponseWriter, r *http.Request){
+// NewServer initializes a new Server instance
+func NewServer(db *sql.DB, cache *lru.Cache[string, string]) *Server {
+	return &Server{
+		db:        db,
+		authCache: cache,
+	}
+}
+
+func (s *Server) Routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/telemetry", s.handleTelemetry)
+	return mux
+}
+
+func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	userID := r.Header.Get("User-ID")
 	userToken := r.Header.Get("Auth-Token")
 
-	isNewUser := isNewUser(userID, w)
+	// 1. Unauthenticated / First-time user onboarding
+	if userID == "" || userToken == "" {
+		s.handleNewUser(w, r.Context())
+		return
+	}
 
-	if !isNewUser {
-		log.Println("Found credentials. Cross-checking with database...")
-		
-		cachedUserToken, ok := auth_cache.Get(userID)
-		matchCache := false
+	// 2. Authenticate session token
+	authenticatedUserID, err := s.authenticateUser(r.Context(), userID, userToken)
+	if err != nil {
+		log.Printf("Authentication failed for User-ID %s: %v", userID, err)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
-		if !ok {
-			log.Println("User not found in cache... checking database for auth")
-		} else {
-			matchCache = (auth.EncryptToken(userToken) == cachedUserToken)
-		}
+	// 3. Decode JSON stream directly
+	var song models.Song
+	if err := json.NewDecoder(r.Body).Decode(&song); err != nil {
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
 
-		// check if token received is associated with the user
-		// if token exist + connected to user => add event
-		if matchCache || checkUser(userID, auth.EncryptToken(userToken)) {
-			var songRead models.Song 
+	if song.Title == "" {
+		// Empty event tick received - soft succeed
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
-			bodyBytes, err := io.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, "Failed to read request body", http.StatusBadRequest)
-				return
-			} 
-			defer r.Body.Close()
+	// 4. Record event
+	songID := store.StoreSong(s.db, song)
+	if songID > -1 {
+		store.StoreAndSessionizeEvent(s.db, authenticatedUserID, songID)
+	}
 
-			err = json.Unmarshal(bodyBytes, &songRead)
-			if err != nil {
-				http.Error(w, "Internal server error: Unable to map data into usable object", http.StatusInternalServerError)
-				return
-			}
+	w.WriteHeader(http.StatusAccepted)
+}
 
-			if songRead.Title == "" {
-				log.Println("Logged empty song")
-				return
-			}
+func (s *Server) authenticateUser(ctx context.Context, userID, rawToken string) (string, error) {
+	encryptedToken := auth.EncryptToken(rawToken)
 
-			songID := store.StoreSong(databasePool, songRead)
-
-			if songID > -1 {
-				store.StoreAndSessionizeEvent(databasePool, userID, songID)
-			}
-
-		} else {
-			log.Println("Expired token! Regenerating...")
+	// Check LRU Cache (Key = Token, Value = UserID)
+	if cachedUserID, ok := s.authCache.Get(encryptedToken); ok {
+		if cachedUserID == userID {
+			return cachedUserID, nil
 		}
 	}
 
-}
-
-func checkUser(userID string, token string) bool{
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Cache miss - fallback to Database
+	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	row := databasePool.QueryRowContext(ctx, "SELECT token FROM auth_token WHERE user_id = $1", userID)
-	
 
-	var foundToken string
+	var dbToken string
+	query := "SELECT token FROM auth_token WHERE user_id = $1"
+	err := s.db.QueryRowContext(queryCtx, query, userID).Scan(&dbToken)
 
-	err := row.Scan(&foundToken)
-	if err == sql.ErrNoRows {
-		log.Printf("No users found with id: %v", userID)
-		return false
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("user not found")
 	} else if err != nil {
-		log.Printf("Scan error: %v", err)
-		return false
+		return "", fmt.Errorf("db error: %w", err)
 	}
 
-	if token == foundToken {
-		log.Println("Found user in db! Adding to cache...")
-		auth_cache.Add(userID, token)
-		return true
-	} 
-	
-	return false
-}
-
-func isNewUser(userID string, w http.ResponseWriter) bool{
-	if len(userID) == 0 { // If no credentials, generate user ID + token and send to C# reader
-		var token models.AuthToken
-		log.Println("Received empty token. Generating ID and token for user")
-		newUserUUID := uuid.New().String()
-		newUserToken := auth.GenerateToken()
-		
-		log.Println("Adding user to cache...")
-		auth_cache.Add(newUserUUID, auth.EncryptToken(newUserToken))
-
-		token.Token = newUserToken
-		token.UserID = newUserUUID
-
-		store.StoreUserAndToken(databasePool, newUserUUID, auth.EncryptToken(newUserToken))
-		tokenJson, err := json.Marshal(token)
-
-		if err != nil {
-			http.Error(w, "Internal server error: Unable to format credentials", http.StatusInternalServerError)
-			return false
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(tokenJson)		
-
-		return true
+	if dbToken != encryptedToken {
+		return "", fmt.Errorf("invalid token match")
 	}
 
-	return false
+	// Store in cache upon successful DB verification
+	s.authCache.Add(encryptedToken, userID)
+	return userID, nil
 }
-	
-func Start(cache *lru.Cache[string, string], port string, db *sql.DB){
-	auth_cache = cache
-	databasePool = db
-	http.HandleFunc("/", handler)
 
-	fmt.Printf("Server is running on port %v\n", port)
+func (s *Server) handleNewUser(w http.ResponseWriter, ctx context.Context) {
+	log.Println("Credentials missing. Generating new user ID and auth token.")
 
+	newUUID := uuid.New().String()
+	rawToken := auth.GenerateToken()
+	encryptedToken := auth.EncryptToken(rawToken)
 
-	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
+	// Persist credentials
+	if err := store.StoreUserAndToken(s.db, newUUID, encryptedToken); err != nil {
+		log.Printf("Failed to store new user in DB: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Cache token
+	s.authCache.Add(encryptedToken, newUUID)
+
+	resp := models.AuthToken{
+		UserID: newUUID,
+		Token:  rawToken, // Return raw token to client once
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func Start(cache *lru.Cache[string, string], port string, db *sql.DB) {
+	srv := NewServer(db, cache)
+
+	httpServer := &http.Server{
+		Addr:         ":" + port,
+		Handler:      srv.Routes(),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	log.Printf("Server listening on port %s...", port)
+	log.Fatal(httpServer.ListenAndServe())
 }

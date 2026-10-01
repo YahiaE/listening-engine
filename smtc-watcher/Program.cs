@@ -40,7 +40,7 @@ public class Credential
 class Program
 {
     private const string TargetAppId = "Spotify";
-    private const string ServerUrl = "http://172.19.164.243:5000";
+    private const string ServerUrl = "http://172.19.164.243:5000/";
     private const string CredentialAppName = "listening-engine-auth";
 
     private static GlobalSystemMediaTransportControlsSession? _currentSession;
@@ -75,6 +75,7 @@ class Program
             else
             {
                 Console.WriteLine("Not found!");
+
                 await RegisterCredentialsAsync();
             }
 
@@ -184,6 +185,7 @@ class Program
             using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post, ServerUrl);
             tokenRequest.Headers.Add("Auth-Token", "");
             tokenRequest.Headers.Add("User-ID", "");
+
 
             using var tokenResponse = await client.SendAsync(tokenRequest);
             tokenResponse.EnsureSuccessStatusCode();
