@@ -22,6 +22,13 @@ type User struct {
 	// created_at (timestamp) can be auto generated
 }
 
+type OTPPairing struct {
+	Email string `json:"email"` // primary key
+	Code string `json:"otp"` // primary key
+	// created_at (timestamp) can be auto generated
+}
+
+
 // token => connects back to user
 type AuthToken struct {
 	Token string `json:"token"` // primary key

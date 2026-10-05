@@ -182,36 +182,80 @@ class Program
     {
         try
         {
-            using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post, ServerUrl);
+            using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "send-otp");
             tokenRequest.Headers.Add("Auth-Token", "");
             tokenRequest.Headers.Add("User-ID", "");
 
+            Console.WriteLine("Input your email to receive a OTP for verification:");
+            string email = Console.ReadLine();
+
+            tokenRequest.Headers.Add("Email", email);
 
             using var tokenResponse = await client.SendAsync(tokenRequest);
             tokenResponse.EnsureSuccessStatusCode();
 
-            string responseBody = await tokenResponse.Content.ReadAsStringAsync();
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var credentials = JsonSerializer.Deserialize<Credential>(responseBody, options);
+            if (tokenResponse.IsSuccessStatusCode){
+                Console.WriteLine("OTP is Sent! Make sure to check your email inbox / spam!");
 
-            if (credentials != null && !string.IsNullOrEmpty(credentials.Token))
-            {
-                Console.WriteLine("Creating new credentials for local machine...");
-                CredentialManager.WriteCredential(
-                    applicationName: CredentialAppName,
-                    userName: credentials.UserID,
-                    secret: credentials.Token,
-                    comment: "Created credential for identity + auth for listening engine",
-                    persistence: CredentialPersistence.LocalMachine
-                );
+                Console.WriteLine("Input your one-time passcode to verify your machine!");
+                string otp = Console.ReadLine();
 
-                _isRegistered = HaveCredentials();
-                SetToken();
-                Console.WriteLine("Registration Complete!");
-                return true;
+                using HttpRequestMessage tokenRequestVerify = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "verify-otp");
+                var payload = new {email = email, otp = otp};
+                tokenRequestVerify.Content = JsonContent.Create(payload);
+
+                using var tokenResponseVerify = await client.SendAsync(tokenRequestVerify);
+                bool isVerified = tokenResponseVerify.IsSuccessStatusCode;
+                string responseBody = "";
+                while (!isVerified){
+                    Console.WriteLine("Incorrect. Please input your passcode again");
+                    otp = Console.ReadLine();
+
+                    using HttpRequestMessage tokenRequestVerifyAgain = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "verify-otp");
+                    payload = new {email = email, otp = otp};
+                    tokenRequestVerifyAgain.Content = JsonContent.Create(payload);
+                    using var tokenResponseVerifyAgain = await client.SendAsync(tokenRequestVerifyAgain);
+                    isVerified = tokenResponseVerifyAgain.IsSuccessStatusCode;
+
+                    if (isVerified){
+                        responseBody = await tokenResponseVerifyAgain.Content.ReadAsStringAsync();
+                    }
+                }
+
+                if (responseBody == ""){
+                    responseBody = await tokenResponseVerify.Content.ReadAsStringAsync();
+                }
+
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var credentials = JsonSerializer.Deserialize<Credential>(responseBody, options);
+
+                if (credentials != null && !string.IsNullOrEmpty(credentials.Token))
+                {
+                    Console.WriteLine("Creating new credentials for local machine...");
+                    CredentialManager.WriteCredential(
+                        applicationName: CredentialAppName,
+                        userName: credentials.UserID,
+                        secret: credentials.Token,
+                        comment: "Created credential for identity + auth for listening engine",
+                        persistence: CredentialPersistence.LocalMachine
+                    );
+
+                    _isRegistered = HaveCredentials();
+                    SetToken();
+                    Console.WriteLine("Registration Complete!");
+                    return true;
+                }
+
+                throw new InvalidDataException("Unable to obtain valid credential payload from server.");
+                return false;
+
             }
 
-            throw new InvalidDataException("Unable to obtain valid credential payload from server.");
+            return false;
+            
+
+
+            
         }
         catch (Exception ex)
         {

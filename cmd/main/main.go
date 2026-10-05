@@ -9,7 +9,13 @@ import (
 )
 
 func main() {
-	cache, err := lru.New[string, string](400000)
+	auth_cache, err := lru.New[string, string](200000)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	otp_cache, err := lru.New[string, string](50000)
 	if err != nil {
 		log.Println(err)
 		return
@@ -20,7 +26,7 @@ func main() {
 	database := db.Start()
 	defer database.Close()
 
-	server.Start(cache, port, database)
+	server.Start(auth_cache, otp_cache, port, database)
 
 	
 	
