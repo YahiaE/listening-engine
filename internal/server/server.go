@@ -9,10 +9,8 @@ import (
 	"log"
 	"net/http"
 	"time"
-
 	"github.com/google/uuid"
 	lru "github.com/hashicorp/golang-lru/v2"
-
 	"github.com/YahiaE/listening-engine/internal/auth"
 	"github.com/YahiaE/listening-engine/internal/models"
 	"github.com/YahiaE/listening-engine/internal/store"
@@ -146,28 +144,82 @@ func (s *Server) handleNewUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isVerified {
-		log.Println("Generating new user ID and auth token...")
+		hasExistingEmail := false
+		queryCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
 
-		rawToken := auth.GenerateToken()
-		newUUID := uuid.New().String()
+		var userID string
+		var rawToken string
+		var newUUID string
+		var resp models.AuthToken
 
-		log.Println(rawToken, newUUID)
+
+		query := "SELECT id FROM users WHERE email = $1"
+		err = s.db.QueryRowContext(queryCtx, query, authOTP.Email).Scan(&userID)
+
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("email (%s) not found: %v", authOTP.Email, err)
+		} else if err != nil {
+			log.Printf("db error: %v", err)
+			return 
+		}
+
+		if userID != "" {
+			hasExistingEmail = true
+		}
+
+		if hasExistingEmail {
+
+			/*
+				Generate new token
+				Send to local machine to use for verification!
+				return to stop function
+			*/
+			log.Printf("Found existing email! Generating new token for user %s", userID)
+			rawToken = auth.GenerateToken()
+			encryptedToken := auth.EncryptToken(rawToken)
+			if err = store.StoreToken(s.db, userID, encryptedToken); err != nil {
+				log.Printf("Failed to store new credential in DB: %v", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			s.authCache.Add(encryptedToken, userID)
+			resp = models.AuthToken{
+				UserID: userID,
+				Token:  rawToken, // Return raw token to client once
+			}
+
+			
+
+		} else {
+			log.Println("No existing email detected! Generating new user ID and auth token...")
+
+			rawToken = auth.GenerateToken()
+			newUUID = uuid.New().String()
+
+			// log.Println(rawToken, newUUID)
 		
-		encryptedToken := auth.EncryptToken(rawToken)
-		// Persist credentials
-		if err := store.StoreUserAndToken(s.db, newUUID, encryptedToken); err != nil {
-			log.Printf("Failed to store new user in DB: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
+			encryptedToken := auth.EncryptToken(rawToken)
+			// Persist credentials
+			if err = store.StoreUserAndToken(s.db, newUUID, encryptedToken, authOTP.Email); err != nil {
+				log.Printf("Failed to store new user in DB: %v", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			// Cache token
+			s.authCache.Add(encryptedToken, newUUID)
+
+			resp = models.AuthToken{
+				UserID: newUUID,
+				Token:  rawToken, // Return raw token to client once
+			}
 		}
 
-		// Cache token
-		s.authCache.Add(encryptedToken, newUUID)
+		
 
-		resp := models.AuthToken{
-			UserID: newUUID,
-			Token:  rawToken, // Return raw token to client once
-		}
+		
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)

@@ -23,9 +23,8 @@ type User struct {
 }
 
 type OTPPairing struct {
-	Email string `json:"email"` // primary key
-	Code string `json:"otp"` // primary key
-	// created_at (timestamp) can be auto generated
+	Email string `json:"email"`
+	Code string `json:"otp"` 
 }
 
 

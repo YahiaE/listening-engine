@@ -182,12 +182,20 @@ class Program
     {
         try
         {
+            Console.WriteLine("Input your email to receive a OTP for verification:");
+            string? email = Console.ReadLine();
+
+            while (string.IsNullOrWhiteSpace(email)){
+                Console.WriteLine("Empty input!");
+                Console.WriteLine("Input your email to receive a OTP for verification:");
+                email = Console.ReadLine();
+            }
+
             using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "send-otp");
             tokenRequest.Headers.Add("Auth-Token", "");
             tokenRequest.Headers.Add("User-ID", "");
 
-            Console.WriteLine("Input your email to receive a OTP for verification:");
-            string email = Console.ReadLine();
+
 
             tokenRequest.Headers.Add("Email", email);
 
@@ -198,19 +206,20 @@ class Program
                 Console.WriteLine("OTP is Sent! Make sure to check your email inbox / spam!");
 
                 Console.WriteLine("Input your one-time passcode to verify your machine!");
-                string otp = Console.ReadLine();
+                string? otp = Console.ReadLine();
 
                 using HttpRequestMessage tokenRequestVerify = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "verify-otp");
                 var payload = new {email = email, otp = otp};
                 tokenRequestVerify.Content = JsonContent.Create(payload);
-
+                await Task.Delay(4000); 
                 using var tokenResponseVerify = await client.SendAsync(tokenRequestVerify);
+                
                 bool isVerified = tokenResponseVerify.IsSuccessStatusCode;
                 string responseBody = "";
                 while (!isVerified){
                     Console.WriteLine("Incorrect. Please input your passcode again");
                     otp = Console.ReadLine();
-
+                    await Task.Delay(4000); 
                     using HttpRequestMessage tokenRequestVerifyAgain = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "verify-otp");
                     payload = new {email = email, otp = otp};
                     tokenRequestVerifyAgain.Content = JsonContent.Create(payload);
@@ -247,7 +256,6 @@ class Program
                 }
 
                 throw new InvalidDataException("Unable to obtain valid credential payload from server.");
-                return false;
 
             }
 
