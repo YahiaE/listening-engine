@@ -8,8 +8,24 @@ import (
 	"context"
 )
 
+func StoreToken(db *sql.DB, userID string, token string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-func StoreUserAndToken(db *sql.DB, userID string, token string) error {
+	_, err := db.ExecContext(ctx, "INSERT INTO auth_token (token, user_id) VALUES ($1, $2)", token, userID)
+	if err != nil {
+		log.Println(err)
+    	return err
+	}
+
+	log.Println("inserted token")
+
+	log.Printf("Registered new device!")
+
+	return nil
+}
+
+func StoreUserAndToken(db *sql.DB, userID string, token string, email string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	
@@ -21,12 +37,12 @@ func StoreUserAndToken(db *sql.DB, userID string, token string) error {
 
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(ctx, "INSERT INTO users (id) VALUES ($1)", userID)
+	_, err = tx.ExecContext(ctx, "INSERT INTO users (id, email) VALUES ($1, $2)", userID, email)
 	if err != nil {
 		log.Println(err)
     	return err
 	}
-	log.Println("inserted user id")
+	log.Println("inserted user id + email")
 
 	_, err = tx.ExecContext(ctx, "INSERT INTO auth_token (token, user_id) VALUES ($1, $2)", token, userID)
 	if err != nil {
