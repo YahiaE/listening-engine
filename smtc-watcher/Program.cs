@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -56,6 +57,10 @@ class Program
     private static string? userToken;
     private static string? userID;
 
+    // Signal synchronization flags for thread-safe re-verification
+    private static volatile bool _needsReverification = false;
+    private static readonly ManualResetEventSlim _reauthSignal = new(false);
+
     // Locks async tasks 1 by 1 so there is no overlap during property reads
     private static readonly SemaphoreSlim _asyncLock = new SemaphoreSlim(1, 1);
 
@@ -75,7 +80,6 @@ class Program
             else
             {
                 Console.WriteLine("Not found!");
-
                 await RegisterCredentialsAsync();
             }
 
@@ -87,11 +91,35 @@ class Program
             SyncActiveSession(_sessionManager.GetCurrentSession());
 
             Console.WriteLine("Listening engine actively tracking Spotify telemetry. Press Enter to exit.");
-            Console.ReadLine();
+
+            // Main control loop running on the primary thread to handle console prompts safely
+            while (true)
+            {
+                if (_needsReverification)
+                {
+                    _needsReverification = false;
+                    _reauthSignal.Reset();
+
+                    Console.WriteLine("\n--- Starting Re-verification Flow ---");
+                    await RegisterCredentialsAsync();
+                    Console.WriteLine("--- Resuming Telemetry Tracking ---");
+                }
+
+                if (Console.KeyAvailable)
+                {
+                    var key = Console.ReadKey(intercept: true);
+                    if (key.Key == ConsoleKey.Enter)
+                    {
+                        break; // Exit app
+                    }
+                }
+
+                await Task.Delay(200);
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error receiving session manager: {ex.Message}");
+            Console.WriteLine($"Error in main execution: {ex.Message}");
         }
     }
 
@@ -182,92 +210,86 @@ class Program
     {
         try
         {
-            Console.WriteLine("Input your email to receive a OTP for verification:");
+            Console.WriteLine("Input your email to receive an OTP for verification:");
             string? email = Console.ReadLine();
 
-            while (string.IsNullOrWhiteSpace(email)){
+            while (string.IsNullOrWhiteSpace(email))
+            {
                 Console.WriteLine("Empty input!");
-                Console.WriteLine("Input your email to receive a OTP for verification:");
+                Console.WriteLine("Input your email to receive an OTP for verification:");
                 email = Console.ReadLine();
             }
 
             using HttpRequestMessage tokenRequest = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "send-otp");
-            tokenRequest.Headers.Add("Auth-Token", "");
-            tokenRequest.Headers.Add("User-ID", "");
-
-
-
             tokenRequest.Headers.Add("Email", email);
 
             using var tokenResponse = await client.SendAsync(tokenRequest);
             tokenResponse.EnsureSuccessStatusCode();
 
-            if (tokenResponse.IsSuccessStatusCode){
+            if (tokenResponse.IsSuccessStatusCode)
+            {
                 Console.WriteLine("OTP is Sent! Make sure to check your email inbox / spam!");
 
                 Console.WriteLine("Input your one-time passcode to verify your machine!");
                 string? otp = Console.ReadLine();
 
                 using HttpRequestMessage tokenRequestVerify = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "verify-otp");
-                var payload = new {email = email, otp = otp};
+                var payload = new { email = email, otp = otp };
                 tokenRequestVerify.Content = JsonContent.Create(payload);
                 await Task.Delay(4000); 
                 using var tokenResponseVerify = await client.SendAsync(tokenRequestVerify);
                 
                 bool isVerified = tokenResponseVerify.IsSuccessStatusCode;
                 string responseBody = "";
-                while (!isVerified){
+                while (!isVerified)
+                {
                     Console.WriteLine("Incorrect. Please input your passcode again");
                     otp = Console.ReadLine();
                     await Task.Delay(4000); 
                     using HttpRequestMessage tokenRequestVerifyAgain = new HttpRequestMessage(HttpMethod.Post, ServerUrl + "verify-otp");
-                    payload = new {email = email, otp = otp};
+                    payload = new { email = email, otp = otp };
                     tokenRequestVerifyAgain.Content = JsonContent.Create(payload);
                     using var tokenResponseVerifyAgain = await client.SendAsync(tokenRequestVerifyAgain);
                     isVerified = tokenResponseVerifyAgain.IsSuccessStatusCode;
 
-                    if (isVerified){
+                    if (isVerified)
+                    {
                         responseBody = await tokenResponseVerifyAgain.Content.ReadAsStringAsync();
                     }
                 }
 
-                if (responseBody == ""){
+                if (responseBody == "")
+                {
                     responseBody = await tokenResponseVerify.Content.ReadAsStringAsync();
                 }
 
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var credentials = JsonSerializer.Deserialize<Credential>(responseBody, options);
 
-                if (credentials != null && !string.IsNullOrEmpty(credentials.Token))
-                {
-                    Console.WriteLine("Creating new credentials for local machine...");
-                    CredentialManager.WriteCredential(
+                Console.WriteLine("Creating new credentials for local machine...");
+                CredentialManager.WriteCredential(
                         applicationName: CredentialAppName,
                         userName: credentials.UserID,
                         secret: credentials.Token,
                         comment: "Created credential for identity + auth for listening engine",
                         persistence: CredentialPersistence.LocalMachine
-                    );
+                );
 
-                    _isRegistered = HaveCredentials();
-                    SetToken();
-                    Console.WriteLine("Registration Complete!");
-                    return true;
-                }
-
-                throw new InvalidDataException("Unable to obtain valid credential payload from server.");
-
+                _isRegistered = HaveCredentials();
+                SetToken();
+                Console.WriteLine("Registration Complete!");
+                return true;
+            }
+            else
+            {
+                Console.WriteLine("Failed");
             }
 
             return false;
-            
-
-
-            
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Registration Error: {ex.Message}");
+            Console.WriteLine($"Unable to obtain credentials: {ex.Message}");
             return false;
         }
     }
@@ -320,6 +342,16 @@ class Program
                 if (eventResponse.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"[Sent Event] {eventToSend.Title} by {eventToSend.Artist}");
+                } 
+                else 
+                {
+                    string errorContent = await eventResponse.Content.ReadAsStringAsync();
+                    if (errorContent.Contains("mismatch", StringComparison.OrdinalIgnoreCase) || errorContent.Contains("invalid_token", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine("\n[Auth Warning] Token mismatch detected. Signaling main thread for re-verification...");
+                        _needsReverification = true;
+                        _reauthSignal.Set();
+                    }
                 }
             }
             catch (Exception ex)

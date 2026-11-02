@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"fmt"
 	"log"
 	"net/http"
@@ -46,7 +47,8 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
+	incomingHost := r.Host 
+	log.Println(incomingHost)
 	userID := r.Header.Get("User-ID")
 	userToken := r.Header.Get("Auth-Token")
 	
@@ -61,6 +63,10 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	// 2. Authenticate session token
 	authenticatedUserID, err := s.authenticateUser(r.Context(), userID, userToken)
 	if err != nil {
+		if strings.Contains(err.Error(), "invalid token match"){
+			http.Error(w, "Mismatch", http.StatusUnauthorized)
+			return
+		}
 		log.Printf("Authentication failed for User-ID %s: %v", userID, err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -169,12 +175,6 @@ func (s *Server) handleNewUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if hasExistingEmail {
-
-			/*
-				Generate new token
-				Send to local machine to use for verification!
-				return to stop function
-			*/
 			log.Printf("Found existing email! Generating new token for user %s", userID)
 			rawToken = auth.GenerateToken()
 			encryptedToken := auth.EncryptToken(rawToken)
