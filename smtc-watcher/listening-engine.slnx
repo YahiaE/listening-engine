@@ -1,0 +1,6 @@
+<Solution Description="Actively gather your listening sessions on Spotify and turn them into visuals you can filter and understand!">
+  <Project Path="../installer/installer.vdproj" Type="Installer">
+    <Build Solution="Release|*" />
+  </Project>
+  <Project Path="smtc-watcher.csproj" />
+</Solution>
