@@ -101,7 +101,23 @@ class Program
                     _reauthSignal.Reset();
 
                     Console.WriteLine("\n--- Starting Re-verification Flow ---");
+
+                    // Temporarily detach session events so playback status updates don't clutter the console input
+                    if (_currentSession != null)
+                    {
+                        _currentSession.MediaPropertiesChanged -= OnMediaPropertiesChanged;
+                        _currentSession.PlaybackInfoChanged -= OnPlaybackStateChanged;
+                    }
+
                     await RegisterCredentialsAsync();
+
+                    // Re-attach session events
+                    if (_currentSession != null)
+                    {
+                        _currentSession.MediaPropertiesChanged += OnMediaPropertiesChanged;
+                        _currentSession.PlaybackInfoChanged += OnPlaybackStateChanged;
+                    }
+
                     Console.WriteLine("--- Resuming Telemetry Tracking ---");
                 }
 
@@ -348,7 +364,8 @@ class Program
                     string errorContent = await eventResponse.Content.ReadAsStringAsync();
                     if (errorContent.Contains("mismatch", StringComparison.OrdinalIgnoreCase) || errorContent.Contains("invalid_token", StringComparison.OrdinalIgnoreCase))
                     {
-                        Console.WriteLine("\n[Auth Warning] Token mismatch detected. Signaling main thread for re-verification...");
+                        Console.WriteLine("\n[Auth Warning] Token mismatch detected. Pausing session and signaling re-verification...");
+                        _isRegistered = false; // Stop background threads from firing further telemetry
                         _needsReverification = true;
                         _reauthSignal.Set();
                     }
