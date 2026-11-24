@@ -1,15 +1,16 @@
 package auth
 
 import (
-    "crypto/rand"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"math/big"
 	"fmt"
+	"math/big"
 )
 
 func GenerateToken() string {
-    return rand.Text()
+	// The raw token is sent to the watcher; only its SHA-256 hash is stored.
+	return rand.Text()
 }
 
 func EncryptToken(token string) string {
@@ -21,7 +22,7 @@ func EncryptToken(token string) string {
 
 func GenerateOTP(length int) (string, error) {
 	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(length)), nil)
-	
+
 	num, err := rand.Int(rand.Reader, max)
 	if err != nil {
 		return "", err

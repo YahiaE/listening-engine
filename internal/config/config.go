@@ -1,14 +1,16 @@
 package config
 
 import (
+	"github.com/joho/godotenv"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
-	"github.com/joho/godotenv"
 )
 
 func LoadEnv() {
+	// Resolve .env relative to this source file so startup works independently
+	// of the shell's current directory.
 	_, b, _, _ := runtime.Caller(0)
 	currentDir := filepath.Dir(b)
 
@@ -16,7 +18,7 @@ func LoadEnv() {
 	envPath := filepath.Join(projectRoot, ".env")
 
 	if err := godotenv.Load(envPath); err != nil {
-		log.Printf("No .env file found at %s. Using system env variables")
+		log.Printf("No .env file found. Using system environment variables: %v", err)
 
 	}
 }

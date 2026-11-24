@@ -1,13 +1,15 @@
 package email
 
 import (
-	"github.com/wneessen/go-mail"
-	"github.com/YahiaE/listening-engine/internal/config"
 	"github.com/YahiaE/listening-engine/internal/auth"
+	"github.com/YahiaE/listening-engine/internal/config"
+	"github.com/wneessen/go-mail"
 	"log"
 )
 
 func SendCode(userEmail string) (string, error) {
+	// Registration step: generate and email a code before the watcher can create
+	// or replace local credentials.
 	message := mail.NewMsg()
 	if err := message.From("spotify.listening.engine@gmail.com"); err != nil {
 		log.Printf("Failed to set From address: %s", err)
@@ -19,14 +21,14 @@ func SendCode(userEmail string) (string, error) {
 	}
 
 	message.Subject("Verification Code")
-	message.SetImportance(mail.ImportanceHigh) 
+	message.SetImportance(mail.ImportanceHigh)
 
 	otp, err := auth.GenerateOTP(6)
 	if err != nil {
 		log.Println("Error generating OTP:", err)
 		return "", err
 	}
-	
+
 	message.SetBodyString(mail.TypeTextPlain, otp)
 
 	user := config.Get("EMAIL")
@@ -47,5 +49,5 @@ func SendCode(userEmail string) (string, error) {
 	log.Printf("OTP is sent!")
 
 	return otp, nil
-	
+
 }
