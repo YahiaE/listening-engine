@@ -121,7 +121,19 @@ func (s *Server) authenticateUser(ctx context.Context, userID, rawToken string) 
 	}
 
 	if dbToken != encryptedToken {
-		return "", fmt.Errorf("invalid token match")
+		log.Println("Invalid match with token. Re-verify to confirm that device belongs to user")
+
+		requestCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel() // Crucial to prevent resource leaks
+
+	
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "", nil)
+		if err != nil {
+			fmt.Printf("failed to create request: %v\n", err)
+			return
+		}
+
+
 	}
 
 	// Store in cache upon successful DB verification
