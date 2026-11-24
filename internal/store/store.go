@@ -1,21 +1,22 @@
-package store 
+package store
 
 import (
-	"database/sql"
-	"log"
-	"github.com/YahiaE/listening-engine/internal/models"
-	"time"
 	"context"
+	"database/sql"
+	"github.com/YahiaE/listening-engine/internal/models"
+	"log"
+	"time"
 )
 
 func StoreToken(db *sql.DB, userID string, token string) error {
+	// Re-verification path: existing email, newly rotated hashed token.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	_, err := db.ExecContext(ctx, "INSERT INTO auth_token (token, user_id) VALUES ($1, $2)", token, userID)
 	if err != nil {
 		log.Println(err)
-    	return err
+		return err
 	}
 
 	log.Println("inserted token")
@@ -26,9 +27,10 @@ func StoreToken(db *sql.DB, userID string, token string) error {
 }
 
 func StoreUserAndToken(db *sql.DB, userID string, token string, email string) error {
+	// First-registration path: create user and token atomically.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	tx, err := db.BeginTx(ctx, nil)
 
 	if err != nil {
@@ -40,14 +42,14 @@ func StoreUserAndToken(db *sql.DB, userID string, token string, email string) er
 	_, err = tx.ExecContext(ctx, "INSERT INTO users (id, email) VALUES ($1, $2)", userID, email)
 	if err != nil {
 		log.Println(err)
-    	return err
+		return err
 	}
 	log.Println("inserted user id + email")
 
 	_, err = tx.ExecContext(ctx, "INSERT INTO auth_token (token, user_id) VALUES ($1, $2)", token, userID)
 	if err != nil {
 		log.Println(err)
-    	return err
+		return err
 	}
 
 	log.Println("inserted token")
@@ -58,7 +60,7 @@ func StoreUserAndToken(db *sql.DB, userID string, token string, email string) er
 }
 
 func StoreSong(db *sql.DB, song models.Song) int64 {
-	
+	// Canonicalize repeated title/artist/album combinations to one song row.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -69,42 +71,43 @@ func StoreSong(db *sql.DB, song models.Song) int64 {
 	DO UPDATE SET title = EXCLUDED.title
 	RETURNING id;
 	`
-	// updated title to the same title to just trigger return from query 
+	// updated title to the same title to just trigger return from query
 
 	var songID int64
-    err := db.QueryRowContext(ctx, query, song.Title, song.Artist, song.Album).Scan(&songID)
-    if err != nil {
-        log.Printf("Failed to store/retrieve song: %v", err)
-        return -1
-    }
+	err := db.QueryRowContext(ctx, query, song.Title, song.Artist, song.Album).Scan(&songID)
+	if err != nil {
+		log.Printf("Failed to store/retrieve song: %v", err)
+		return -1
+	}
 
 	return songID
 }
 
 func StoreAndSessionizeEvent(db *sql.DB, user_id string, song_id int64) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	// Telemetry storage path: link the event to its user and listening session.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    tx, err := db.BeginTx(ctx, nil)
-    if err != nil {
-        return err
-    }
-    defer tx.Rollback()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 
-    query := `SELECT event_id, s_id, time_created FROM create_event_and_session($1, $2);`
-    
-    row := tx.QueryRowContext(ctx, query, user_id, song_id)
+	query := `SELECT event_id, s_id, time_created FROM create_event_and_session($1, $2);`
 
-    var eventID int64
-    var sessionID int64
-    var createdAt time.Time
-    err = row.Scan(&eventID, &sessionID, &createdAt)
-    if err != nil {
-        log.Println(err)
-        return err
-    }
+	row := tx.QueryRowContext(ctx, query, user_id, song_id)
 
-    log.Printf("Stored event of ID %v into Session %v. Time made: %v", eventID, sessionID, createdAt)
+	var eventID int64
+	var sessionID int64
+	var createdAt time.Time
+	err = row.Scan(&eventID, &sessionID, &createdAt)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
 
-    return tx.Commit()
+	log.Printf("Stored event of ID %v into Session %v. Time made: %v", eventID, sessionID, createdAt)
+
+	return tx.Commit()
 }

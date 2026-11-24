@@ -5,24 +5,24 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"strings"
 	"fmt"
-	"log"
-	"net/http"
-	"time"
-	"github.com/google/uuid"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/YahiaE/listening-engine/internal/auth"
+	"github.com/YahiaE/listening-engine/internal/email"
 	"github.com/YahiaE/listening-engine/internal/models"
 	"github.com/YahiaE/listening-engine/internal/store"
-	"github.com/YahiaE/listening-engine/internal/email"
+	"github.com/google/uuid"
+	lru "github.com/hashicorp/golang-lru/v2"
+	"log"
+	"net/http"
+	"strings"
+	"time"
 )
 
 // Server holds dependencies for HTTP handlers (Dependency Injection)
 type Server struct {
 	db        *sql.DB
 	authCache *lru.Cache[string, string] // Key: encryptedToken, Value: userID
-	otpCache *lru.Cache[string, string] // Key: email, Value: one-time passcode
+	otpCache  *lru.Cache[string, string] // Key: email, Value: one-time passcode
 }
 
 // NewServer initializes a new Server instance
@@ -30,11 +30,12 @@ func NewServer(db *sql.DB, cache_auth *lru.Cache[string, string], cache_otp *lru
 	return &Server{
 		db:        db,
 		authCache: cache_auth,
-		otpCache: cache_otp,
+		otpCache:  cache_otp,
 	}
 }
 
 func (s *Server) Routes() http.Handler {
+	// Three workflow endpoints: telemetry, OTP delivery, and OTP verification.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleTelemetry)
 	mux.HandleFunc("/send-otp", s.handleOTP)
@@ -43,15 +44,15 @@ func (s *Server) Routes() http.Handler {
 }
 
 func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
+	// Telemetry ingestion: authenticate, decode one song, then store/sessionize it.
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	incomingHost := r.Host 
+	incomingHost := r.Host
 	log.Println(incomingHost)
 	userID := r.Header.Get("User-ID")
 	userToken := r.Header.Get("Auth-Token")
-	
 
 	// 1. Unauthenticated / First-time user onboarding
 	if userID == "" || userToken == "" {
@@ -63,7 +64,7 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	// 2. Authenticate session token
 	authenticatedUserID, err := s.authenticateUser(r.Context(), userID, userToken)
 	if err != nil {
-		if strings.Contains(err.Error(), "invalid token match"){
+		if strings.Contains(err.Error(), "invalid token match") {
 			http.Error(w, "Mismatch", http.StatusUnauthorized)
 			return
 		}
@@ -95,6 +96,7 @@ func (s *Server) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authenticateUser(ctx context.Context, userID, rawToken string) (string, error) {
+	// Cache first; fall back to PostgreSQL only after an authentication-cache miss.
 	encryptedToken := auth.EncryptToken(rawToken)
 
 	// Check LRU Cache (Key = Token, Value = UserID)
@@ -128,6 +130,7 @@ func (s *Server) authenticateUser(ctx context.Context, userID, rawToken string) 
 }
 
 func (s *Server) handleNewUser(w http.ResponseWriter, r *http.Request) {
+	// Verification step: OTP match, user lookup, token issue, credential response.
 	var authOTP models.OTPPairing
 	isVerified := false
 
@@ -159,7 +162,6 @@ func (s *Server) handleNewUser(w http.ResponseWriter, r *http.Request) {
 		var newUUID string
 		var resp models.AuthToken
 
-
 		query := "SELECT id FROM users WHERE email = $1"
 		err = s.db.QueryRowContext(queryCtx, query, authOTP.Email).Scan(&userID)
 
@@ -167,7 +169,7 @@ func (s *Server) handleNewUser(w http.ResponseWriter, r *http.Request) {
 			log.Printf("email (%s) not found: %v", authOTP.Email, err)
 		} else if err != nil {
 			log.Printf("db error: %v", err)
-			return 
+			return
 		}
 
 		if userID != "" {
@@ -190,8 +192,6 @@ func (s *Server) handleNewUser(w http.ResponseWriter, r *http.Request) {
 				Token:  rawToken, // Return raw token to client once
 			}
 
-			
-
 		} else {
 			log.Println("No existing email detected! Generating new user ID and auth token...")
 
@@ -199,7 +199,7 @@ func (s *Server) handleNewUser(w http.ResponseWriter, r *http.Request) {
 			newUUID = uuid.New().String()
 
 			// log.Println(rawToken, newUUID)
-		
+
 			encryptedToken := auth.EncryptToken(rawToken)
 			// Persist credentials
 			if err = store.StoreUserAndToken(s.db, newUUID, encryptedToken, authOTP.Email); err != nil {
@@ -217,18 +217,15 @@ func (s *Server) handleNewUser(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		
-
-		
-
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(resp)
 	}
-	
+
 }
 
 func (s *Server) handleOTP(w http.ResponseWriter, r *http.Request) {
+	// Delivery step: create an OTP, email it, and briefly retain it in memory.
 
 	userEmail := r.Header.Get("Email")
 	log.Printf("Sending OTP to user's email: %s", userEmail)

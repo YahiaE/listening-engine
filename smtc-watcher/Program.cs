@@ -40,6 +40,7 @@ public class Credential
 
 class Program
 {
+    // Workflow constants: one application target and one backend identity.
     private const string TargetAppId = "Spotify";
     private const string ServerUrl = "http://172.19.164.243:5000/";
     private const string CredentialAppName = "listening-engine-auth";
@@ -66,6 +67,7 @@ class Program
 
     static async Task Main()
     {
+        // Startup: load or obtain credentials, attach to Windows media, then run.
         try
         {
             Console.WriteLine("Finding user credentials...");
@@ -146,6 +148,7 @@ class Program
 
     private static void SyncActiveSession(GlobalSystemMediaTransportControlsSession? session)
     {
+        // Session selection: replace the observed session only when Spotify changes.
         if (session == null || session == _currentSession)
         {
             return;
@@ -224,6 +227,7 @@ class Program
 
     private static async Task<bool> RegisterCredentialsAsync()
     {
+        // Registration/re-verification: email OTP -> verify -> persist raw credentials.
         try
         {
             Console.WriteLine("Input your email to receive an OTP for verification:");
@@ -281,6 +285,12 @@ class Program
 
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var credentials = JsonSerializer.Deserialize<Credential>(responseBody, options);
+                if (credentials == null || string.IsNullOrWhiteSpace(credentials.UserID) ||
+                    string.IsNullOrWhiteSpace(credentials.Token))
+                {
+                    Console.WriteLine("Server returned incomplete credentials.");
+                    return false;
+                }
 
                 Console.WriteLine("Creating new credentials for local machine...");
                 CredentialManager.WriteCredential(
@@ -312,6 +322,7 @@ class Program
 
     private static async Task GrabMediaDataAsync(GlobalSystemMediaTransportControlsSession session)
     {
+        // Telemetry step: read deduplicated media metadata and send it to the backend.
         Event? eventToSend = null;
 
         await _asyncLock.WaitAsync();

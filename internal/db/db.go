@@ -1,17 +1,16 @@
 package db
 
 import (
-	"database/sql"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"context"
-	"log"
+	"database/sql"
 	"github.com/YahiaE/listening-engine/internal/config"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"log"
 	"strings"
 	"time"
 )
 
-
-func NewDataBase(connString string) (*sql.DB, error){
+func NewDataBase(connString string) (*sql.DB, error) {
 	db, err := sql.Open("pgx", connString)
 
 	if err != nil {
@@ -19,23 +18,23 @@ func NewDataBase(connString string) (*sql.DB, error){
 	}
 
 	db.SetMaxOpenConns(25)
-    db.SetMaxIdleConns(25)
-    db.SetConnMaxLifetime(5 * time.Minute)
-    db.SetConnMaxIdleTime(1 * time.Minute)
+	db.SetMaxIdleConns(25)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(1 * time.Minute)
 
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, err
 	}
 
-
 	return db, nil
 }
 
 func CreateTables(db *sql.DB) {
+	// Workflow data: users -> auth tokens, and users -> sessions -> events -> songs.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
-	
+	defer cancel()
+
 	query := `
 	CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, email TEXT NOT NULL, created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP);
 	
@@ -67,8 +66,7 @@ func CreateTables(db *sql.DB) {
 
 	log.Println("Establishing tables in database...")
 	// log.Println(strings.Trim(query,"\n"))
-	_, err := db.ExecContext(ctx, strings.Trim(query,"\n"))
-	
+	_, err := db.ExecContext(ctx, strings.Trim(query, "\n"))
 
 	if err != nil {
 		log.Fatalf("Failed to establish tables in database: %v", err)
@@ -77,7 +75,7 @@ func CreateTables(db *sql.DB) {
 	}
 }
 
-func EstablishStorageFunction(db *sql.DB) error {	
+func EstablishStorageFunction(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -90,6 +88,8 @@ func EstablishStorageFunction(db *sql.DB) error {
 	defer tx.Rollback()
 
 	query := `
+	-- Called once per telemetry event: find/reopen a session or split it
+	-- into a new session when the previous event was more than 30 minutes ago.
 	CREATE OR REPLACE FUNCTION create_event_and_session(p_user_id UUID, p_song_id BIGINT)
 	RETURNS TABLE (event_id BIGINT, s_id BIGINT, time_created TIMESTAMPTZ) AS $$
 	DECLARE
@@ -142,12 +142,11 @@ func EstablishStorageFunction(db *sql.DB) error {
 	}
 
 	log.Println("Established logic for storing events + sessions")
-	
+
 	return tx.Commit()
 }
 
-	
-func Start() *sql.DB{
+func Start() *sql.DB {
 	db_url := config.Get("DATABASE_URL")
 	db, err := NewDataBase(db_url)
 	if err != nil {
